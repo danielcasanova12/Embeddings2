@@ -1,0 +1,13 @@
+# configs/experiments/exp_cross.yaml
+defaults: [/model]
+experiment_name: "cross-interaction-all"
+model_type: "cross_interaction"
+embeddings:
+  - {name: "semantic",  column: "whisper_path",    dim: 1280}
+  - {name: "content",   column: "contentvec_path", dim: 768}
+  - {name: "acoustic",  column: "speaker_path",    dim: 192}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 3

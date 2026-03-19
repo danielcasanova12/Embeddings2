@@ -1,0 +1,13 @@
+# configs/experiments/exp_single_whisper.yaml
+defaults: [/model]
+experiment_name: "single-whisper"
+model_type: "single"
+embeddings:
+  - name: "semantic"
+    column: "whisper_path"
+    dim: 1280
+adapter:
+  adapter_dim: 512
+mlp:
+  hidden_dim: 512
+  num_layers: 3

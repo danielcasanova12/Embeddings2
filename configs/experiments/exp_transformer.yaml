@@ -1,0 +1,22 @@
+# configs/experiments/exp_transformer.yaml
+defaults: [/model]
+experiment_name: "transformer-fusion"
+model_type: "transformer_fusion"
+embeddings:
+  - {name: "semantic",  column: "whisper_path",    dim: 1280}
+  - {name: "content",   column: "contentvec_path", dim: 768}
+  - {name: "acoustic",  column: "speaker_path",    dim: 192}
+  - {name: "texture",   column: "byola_path",      dim: 512}
+  - {name: "timbre",    column: "clap_path",       dim: 512}
+adapter:
+  adapter_dim: 256
+transformer:
+  num_heads: 4
+  num_layers: 2
+  feedforward_dim: 512
+  dropout: 0.1
+mlp:
+  hidden_dim: 256
+  num_layers: 2
+optimizer:
+  learning_rate: 5.0e-4
