@@ -1,0 +1,20 @@
+# configs/experiments/ab5/ab5_ex2_minus_whisper.yaml
+defaults: [/model]
+experiment_name: "ab5_ex2_minus_whisper"
+model_type: "transformer_fusion"
+embeddings:
+  - {name: "content",   column: "contentvec_path", dim: 768}
+  - {name: "acoustic",  column: "speaker_path",    dim: 192}
+  - {name: "f0",        column: "f0_path",         dim: 256}
+adapter:
+  adapter_dim: 256
+transformer:
+  num_heads: 4
+  num_layers: 2
+  feedforward_dim: 512
+  dropout: 0.1
+mlp:
+  hidden_dim: 256
+  num_layers: 2
+optimizer:
+  learning_rate: 5.0e-4

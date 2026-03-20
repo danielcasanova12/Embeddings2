@@ -1,0 +1,13 @@
+# configs/experiments/ab3/ab3_ex2_minus_whisper.yaml
+defaults: [/model]
+experiment_name: "ab3_ex2_minus_whisper"
+model_type: "concat_fusion"
+embeddings:
+  - {name: "content",   column: "contentvec_path", dim: 768}
+  - {name: "acoustic",  column: "speaker_path",    dim: 192}
+  - {name: "f0",        column: "f0_path",         dim: 256}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 3

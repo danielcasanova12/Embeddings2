@@ -1,11 +1,11 @@
-# configs/experiments/exp_cross.yaml
+# configs/experiments/ab3/ab3_ex4_minus_speaker.yaml
 defaults: [/model]
-experiment_name: "cross-interaction-all"
-model_type: "cross_interaction"
+experiment_name: "ab3_ex4_minus_speaker"
+model_type: "concat_fusion"
 embeddings:
   - {name: "semantic",  column: "whisper_path",    dim: 1280}
   - {name: "content",   column: "contentvec_path", dim: 768}
-  - {name: "acoustic",  column: "speaker_path",    dim: 192}
+  - {name: "f0",        column: "f0_path",         dim: 256}
 adapter:
   adapter_dim: 256
 mlp:

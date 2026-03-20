@@ -1,0 +1,13 @@
+# configs/experiments/ab1_ex3_speaker.yaml
+defaults: [/model]
+experiment_name: "ab1_ex3_speaker"
+model_type: "single"
+embeddings:
+  - name: "acoustic"
+    column: "speaker_path"
+    dim: 192
+adapter:
+  adapter_dim: 512
+mlp:
+  hidden_dim: 512
+  num_layers: 3

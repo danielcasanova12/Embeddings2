@@ -1,0 +1,13 @@
+# configs/experiments/ab1_ex2_contentvec.yaml
+defaults: [/model]
+experiment_name: "ab1_ex2_contentvec"
+model_type: "single"
+embeddings:
+  - name: "content"
+    column: "contentvec_path"
+    dim: 768
+adapter:
+  adapter_dim: 512
+mlp:
+  hidden_dim: 512
+  num_layers: 3

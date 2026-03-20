@@ -1,0 +1,13 @@
+# configs/experiments/ab1_ex4_f0.yaml
+defaults: [/model]
+experiment_name: "ab1_ex4_f0"
+model_type: "single"
+embeddings:
+  - name: "f0"
+    column: "f0_path"
+    dim: 256
+adapter:
+  adapter_dim: 512
+mlp:
+  hidden_dim: 512
+  num_layers: 3

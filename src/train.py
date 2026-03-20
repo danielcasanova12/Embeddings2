@@ -66,6 +66,7 @@ def run_experiment(cfg: dict) -> tuple[list[dict], dict]:
 
     eval_row = {
         "experiment":        exp_name,
+        "checkpoint_path":   checkpoint_cb.best_model_path,
         "model_type":        cfg.get("model_type", "?"),
         "n_embeddings":      len(cfg.get("embeddings", [])),
         "embeddings":        "+".join(e["name"] for e in cfg.get("embeddings", [])),

@@ -1,17 +1,16 @@
-# configs/experiments/exp_reliability.yaml
+# configs/experiments/ab4_ex1_reliability_all.yaml
 defaults: [/model]
-experiment_name: "reliability-fusion"
+experiment_name: "ab4_ex1_reliability_all"
 model_type: "reliability_fusion"
 embeddings:
   - {name: "semantic",  column: "whisper_path",    dim: 1280}
   - {name: "content",   column: "contentvec_path", dim: 768}
   - {name: "acoustic",  column: "speaker_path",    dim: 192}
-  - {name: "texture",   column: "byola_path",      dim: 512}
-  - {name: "timbre",    column: "clap_path",       dim: 512}
+  - {name: "f0",        column: "f0_path",         dim: 256}
 adapter:
   adapter_dim: 256
 reliability:
-  factor_names: ["content", "acoustic", "texture", "timbre", "semantic"]
+  factor_names: ["semantic", "content", "acoustic", "f0"]
   factor_weight: 0.1
 mlp:
   hidden_dim: 256

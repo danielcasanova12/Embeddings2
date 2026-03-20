@@ -1,0 +1,12 @@
+# configs/experiments/ab2_ex5_contentvec_speaker.yaml
+defaults: [/model]
+experiment_name: "ab2_ex5_contentvec_speaker"
+model_type: "cross_interaction"
+embeddings:
+  - {name: "content",   column: "contentvec_path", dim: 768}
+  - {name: "acoustic",  column: "speaker_path",    dim: 192}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 3

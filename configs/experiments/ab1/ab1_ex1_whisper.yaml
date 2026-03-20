@@ -1,6 +1,6 @@
-# configs/experiments/exp_single_whisper.yaml
+# configs/experiments/ab1_ex1_whisper.yaml
 defaults: [/model]
-experiment_name: "single-whisper"
+experiment_name: "ab1_ex1_whisper"
 model_type: "single"
 embeddings:
   - name: "semantic"

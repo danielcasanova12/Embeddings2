@@ -1,0 +1,20 @@
+# configs/experiments/ab5/ab5_ex4_minus_speaker.yaml
+defaults: [/model]
+experiment_name: "ab5_ex4_minus_speaker"
+model_type: "transformer_fusion"
+embeddings:
+  - {name: "semantic",  column: "whisper_path",    dim: 1280}
+  - {name: "content",   column: "contentvec_path", dim: 768}
+  - {name: "f0",        column: "f0_path",         dim: 256}
+adapter:
+  adapter_dim: 256
+transformer:
+  num_heads: 4
+  num_layers: 2
+  feedforward_dim: 512
+  dropout: 0.1
+mlp:
+  hidden_dim: 256
+  num_layers: 2
+optimizer:
+  learning_rate: 5.0e-4
