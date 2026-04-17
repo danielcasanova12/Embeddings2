@@ -34,26 +34,23 @@ def main():
         full_path = f if os.path.isabs(f) else join(input_dir, f)
         filelist.append(full_path)
 
-    # 2. Configurar pastas de saída
     output_whisper = join(args.output_base, "whisper")
     output_content = join(args.output_base, "contentvec")
     output_speaker = join(args.output_base, "speaker")
     output_f0      = join(args.output_base, "f0")
 
-    # 3. Extração em Massa
     print("--- Iniciando Extração: Whisper ---")
     extract_whisper_embeddings(filelist, input_dir, output_whisper, "whisper-large-v3")
 
     print("\n--- Iniciando Extração: ContentVec ---")
     extract_contentvec_embeddings(filelist, input_dir, output_content, "contentvec-best", layer=-1, pool=True)
 
-    print("\n--- Iniciando Extração: Speaker (ECAPA-TDNN) ---")
-    extract_speaker_embeddings(filelist, input_dir, output_speaker, "ecapa-tdnn", aggregate="mean", normalize=True)
+    # print("\n--- Iniciando Extração: Speaker (ECAPA-TDNN) ---")
+    # extract_speaker_embeddings(filelist, input_dir, output_speaker, "ecapa-tdnn", aggregate="mean", normalize=True)
 
-    print("\n--- Iniciando Extração: F0 (CREPE) ---")
-    extract_f0_embeddings(filelist, input_dir, output_f0, backend="crepe", hop_length=160, quantize=False, n_bins=256, f_min=50, f_max=1100)
+    # print("\n--- Iniciando Extração: F0 (CREPE) ---")
+    # extract_f0_embeddings(filelist, input_dir, output_f0, backend="crepe", hop_length=160, quantize=False, n_bins=256, f_min=50, f_max=1100)
 
-    # 4. Atualizar o CSV com os novos caminhos
     print("\n--- Atualizando CSV com caminhos dos embeddings ---")
     
     def get_emb_path(audio_path, out_dir):

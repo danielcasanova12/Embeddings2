@@ -37,12 +37,21 @@ def load_model(model_name: str = "contentvec-best"):
     model_path = CONTENTVEC_MODELS[model_name]
     print(f"Carregando modelo: {model_path}")
 
-    feature_extractor = AutoFeatureExtractor.from_pretrained(model_path)
+    # ContentVec não inclui preprocessor_config.json — usa o feature extractor
+    # do HuBERT base, que é idêntico (16 kHz, normalização padrão).
+    FEATURE_EXTRACTOR_FALLBACK = {
+        "contentvec-best": "facebook/hubert-base-ls960",
+        "hubert-soft":     "facebook/hubert-base-ls960",
+        "hubert-base":     "facebook/hubert-base-ls960",
+        "hubert-large":    "facebook/hubert-large-ll60k",
+    }
+    extractor_path = FEATURE_EXTRACTOR_FALLBACK[model_name]
+
+    feature_extractor = AutoFeatureExtractor.from_pretrained(extractor_path)
     model = HubertModel.from_pretrained(model_path)
     model = model.to(device)
     model.eval()
     return model, feature_extractor
-
 
 def extract_contentvec_embeddings(
     filelist: List[str],
