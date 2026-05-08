@@ -5,7 +5,7 @@ model_type: "single"
 embeddings:
   - name: "f0"
     column: "f0_path"
-    dim: 256
+    dim: 1
 adapter:
   adapter_dim: 512
 mlp:

@@ -5,7 +5,7 @@ model_type: "transformer_fusion"
 embeddings:
   - {name: "semantic",  column: "whisper_path",    dim: 1280}
   - {name: "acoustic",  column: "speaker_path",    dim: 192}
-  - {name: "f0",        column: "f0_path",         dim: 256}
+  - {name: "f0",        column: "f0_path",         dim: 1}
 adapter:
   adapter_dim: 256
 transformer:

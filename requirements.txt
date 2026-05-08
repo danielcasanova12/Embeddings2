@@ -1,0 +1,12 @@
+numpy
+scipy
+librosa
+tqdm
+pandas
+torchcrepe
+torchaudio
+transformers
+speechbrain
+pytorch-lightning
+omegaconf
+wandb

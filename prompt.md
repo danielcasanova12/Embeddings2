@@ -1,9 +1,3 @@
-F:\Git\Embeddings2\extract_embs\extract_contentvec.py
-F:\Git\Embeddings2\extract_embs\extract_f0.py
-F:\Git\Embeddings2\extract_embs\extract_speaker_embeddings.py
-F:\Git\Embeddings2\extract_embs\extract_whisper_embeddings.py
-
-me ajude a criar esta arquitetura corretamente neste projeto
 1. Single Embedding MOS Predictor
     
     Audio
@@ -71,11 +65,6 @@ me ajude a criar esta arquitetura corretamente neste projeto
 5. Transformer Fusion Layer
     
     [whisper]
-    Qf0 - 
-
-    Acoustic structure - Content vec
-
-    specker embedding
     ↓
     Transformer encoder
     ↓
@@ -84,7 +73,5 @@ me ajude a criar esta arquitetura corretamente neste projeto
     MOS
 
 
-e me ajude a editar os configs que fique mais simples para mim não me perder nos configs quanto eu estiver usando uns 3 datasets e estes 4 tipos de embeddins que eu te passei 
-deixe eles de uma forma mais simples de usar por favor, se puder separar exemplo ab1_ de abordagem 1 ex1_ de experimento 1 exemplo aboradagem 1 é single embeding e no ex 1 é usar apenas o wisper 
-
-algo que eu consiga enteder assim me ajude com isso
+Isso já esta tudo implementado?
+os sctipts de extração de embeddins estão implementados e corretamente? 

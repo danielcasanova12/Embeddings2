@@ -62,7 +62,8 @@ def extract_f0_crepe(audio: np.ndarray, sr: int, hop_length: int) -> np.ndarray:
     except ImportError:
         raise ImportError("Instale torchcrepe: pip install torchcrepe")
  
-    audio_tensor = torch.from_numpy(audio).unsqueeze(0).to(device)
+    # Força uma cópia para evitar erro de 'negative strides' no PyTorch
+    audio_tensor = torch.from_numpy(audio.copy()).unsqueeze(0).to(device)
     hop_size_sec = hop_length / sr
  
     f0, periodicity = torchcrepe.predict(

@@ -4,7 +4,7 @@ experiment_name: "ab2_ex7_speaker_f0"
 model_type: "cross_interaction"
 embeddings:
   - {name: "acoustic",  column: "speaker_path",    dim: 192}
-  - {name: "f0",        column: "f0_path",         dim: 256}
+  - {name: "f0",        column: "f0_path",         dim: 1}
 adapter:
   adapter_dim: 256
 mlp:

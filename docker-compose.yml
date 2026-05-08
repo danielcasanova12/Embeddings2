@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  prosody-filter:
+    build: .
+    container_name: prosody_filter_container
+    volumes:
+      # Mapeia a pasta do código atual (F:\Git\Embeddings2) para /app
+      - .:/app
+      
+      # Mapeia a pasta de áudios de entrada para /input
+      - F:\Git\Datasets\mos_last\Datasets_mos\bvcc\main\DATA\wav:/input
+      
+      # Mapeia a pasta de saída para /output
+      - F:\Git\Embeddings2\dataset_emb\bvcc:/output
+
+    # ==========================================================
+    # SUPORTE A GPU (NVIDIA)
+    # Se você tem uma placa de vídeo NVIDIA e o Docker Desktop 
+    # configurado para usá-la, descomente as linhas abaixo 
+    # (remova os '#' do início) para extração muito mais rápida.
+    # ==========================================================
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]

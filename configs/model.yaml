@@ -14,6 +14,13 @@ train:
 optimizer:
   learning_rate: 0.0001
   weight_decay: 0.00001
+  eps: 1.0e-8
+  betas: [0.9, 0.999]
+
+# Scheduler parameters
+scheduler:
+  name: "cosine"           # "cosine" or "plateau"
+  warmup_epochs: 5
 
 # Trainer parameters (PyTorch Lightning)
 trainer:
@@ -22,6 +29,24 @@ trainer:
   gradient_clip_val: 1.0
   log_every_n_steps: 10
   accumulate_grad_batches: 1
+
+# Default Base Architecture components (can be overridden by experiments)
+adapter:
+  adapter_dim: 256
+  dropout: 0.1
+  use_norm: true
+
+mlp:
+  hidden_dim: 512
+  num_layers: 3
+  dropout: 0.2
+  activation: "ReLU"
+  input_norm: true
+
+# Reliability Fusion specifics (used only if model_type == reliability_fusion)
+reliability:
+  factor_weight: 0.0
+  factor_names: []
 
 # Checkpoint configuration
 model_checkpoint:
@@ -35,7 +60,7 @@ model_checkpoint:
 early_stopping:
   monitor: "val/spearman"
   mode: "max"
-  patience: 10
+  patience: 15
 
 # Logging configuration (Optional)
 wandb:
@@ -43,8 +68,3 @@ wandb:
   project: "mos-embeddings"
   entity: null
 
-# Metrics configuration
-metrics:
-  - "mse"
-  - "pearson"
-  - "spearman"
