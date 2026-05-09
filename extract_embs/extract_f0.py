@@ -162,18 +162,22 @@ def extract_f0_embeddings(
       quantize=True  → tensor int32  [T]         — índice de bin (0 = não-vozeado)
     """
     extract_fn = BACKEND_FN[backend]
+    os.makedirs(output_dir, exist_ok=True)
  
     for filepath in tqdm(filelist, desc=f"Extraindo F0 ({backend})"):
         if not exists(filepath):
             print(f"Arquivo não encontrado: {filepath}")
             continue
  
-        # Mantém estrutura de subdiretórios
-        rel_path      = relpath(filepath, input_dir)
-        sub_dir       = dirname(rel_path)
-        output_subdir = join(output_dir, sub_dir)
-        os.makedirs(output_subdir, exist_ok=True)
- 
+        # Salva diretamente no output_dir
+        rel_p = relpath(filepath, input_dir)
+        output_filename = rel_p.rsplit(".", 1)[0] + ".pt"
+        output_filepath = join(output_dir, output_filename)
+        os.makedirs(dirname(output_filepath), exist_ok=True)
+
+        if exists(output_filepath):
+            continue
+
         # Carrega áudio
         audio_data, sr = torchaudio.load(filepath)
  
@@ -199,9 +203,6 @@ def extract_f0_embeddings(
         else:
             tensor = torch.from_numpy(f0)               # float32 [T]
  
-        # Salva
-        output_filename = basename(filepath).rsplit(".", 1)[0] + ".pt"
-        output_filepath = join(output_subdir, output_filename)
         torch.save(tensor, output_filepath)
  
  

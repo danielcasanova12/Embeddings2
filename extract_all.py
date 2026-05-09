@@ -67,15 +67,15 @@ def main():
     # 4. Atualizar o CSV com os novos caminhos absolutos para facilitar o Dataset
     print("\n--- Atualizando CSV com caminhos dos embeddings ---")
     
-    def get_emb_path(audio_path, out_dir):
-        rel = os.path.relpath(audio_path, input_dir)
-        emb_file = os.path.splitext(rel)[0] + ".pt"
+    def get_emb_path(audio_path, out_dir, input_dir):
+        rel_p = os.path.relpath(audio_path, input_dir)
+        emb_file = os.path.splitext(rel_p)[0] + ".pt"
         return join(out_dir, emb_file)
 
-    df["whisper_path"]    = [get_emb_path(f, output_whisper) for f in filelist]
-    df["contentvec_path"] = [get_emb_path(f, output_content) for f in filelist]
-    df["speaker_path"]    = [get_emb_path(f, output_speaker) for f in filelist]
-    df["f0_path"]         = [get_emb_path(f, output_f0)      for f in filelist]
+    df["whisper_path"]    = [get_emb_path(f, output_whisper, input_dir) for f in filelist]
+    df["contentvec_path"] = [get_emb_path(f, output_content, input_dir) for f in filelist]
+    df["speaker_path"]    = [get_emb_path(f, output_speaker, input_dir) for f in filelist]
+    df["f0_path"]         = [get_emb_path(f, output_f0, input_dir)      for f in filelist]
 
     # Salvar o CSV atualizado
     if args.csv_path:

@@ -43,19 +43,21 @@ def extract_whisper_embeddings(
     model_name: str
 ) -> None:
     model, processor = load_model(model_name)
+    os.makedirs(output_dir, exist_ok=True)
     for filepath in tqdm(filelist, desc="Extracting embeddings"):
         # Load audio file
         if not exists(filepath):
             print("file {} doesnt exist!".format(filepath))
             continue
 
-        # Determine the relative path structure
-        rel_path = relpath(filepath, input_dir)
-        # Get the subdirectory structure
-        sub_dir = dirname(rel_path)
-        # Create the same subdirectory structure in output_dir
-        output_subdir = join(output_dir, sub_dir)
-        os.makedirs(output_subdir, exist_ok=True)
+        # Saving embedding directly in output_dir
+        rel_p = relpath(filepath, input_dir)
+        output_filename = rel_p.rsplit(".", 1)[0] + ".pt"
+        output_filepath = join(output_dir, output_filename)
+        os.makedirs(dirname(output_filepath), exist_ok=True)
+        
+        if exists(output_filepath):
+            continue
 
         audio_data, sr = torchaudio.load(filepath)
         # If stereo, convert to mono
@@ -79,9 +81,6 @@ def extract_whisper_embeddings(
         all_layers_embeddings = torch.stack(hidden_states) # [num_layers,B,T,F], B=1
         # transform to [num_layers,T,F]
         all_layers_embeddings = all_layers_embeddings.squeeze(1)
-        # Saving embedding with the same subdirectory structure
-        output_filename = basename(filepath).split(".")[0] + ".pt"
-        output_filepath = join(output_subdir, output_filename)
         torch.save(all_layers_embeddings.cpu(), output_filepath)
 
 

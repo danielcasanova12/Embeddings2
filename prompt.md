@@ -75,3 +75,4 @@
 
 Isso já esta tudo implementado?
 os sctipts de extração de embeddins estão implementados e corretamente? 
+ Eu estava pensando aqui como esta agora como esta pensado o input exemplo entra assim

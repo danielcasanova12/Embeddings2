@@ -116,17 +116,21 @@ def extract_speaker_embeddings(
       wavlm-sv         → 256
     """
     model, processor, backend = load_model(model_name)
+    os.makedirs(output_dir, exist_ok=True)
 
     for filepath in tqdm(filelist, desc=f"Extraindo speaker embeddings ({model_name})"):
         if not exists(filepath):
             print(f"Arquivo não encontrado: {filepath}")
             continue
 
-        # Mantém estrutura de subdiretórios
-        rel_path      = relpath(filepath, input_dir)
-        sub_dir       = dirname(rel_path)
-        output_subdir = join(output_dir, sub_dir)
-        os.makedirs(output_subdir, exist_ok=True)
+        # Salva diretamente no output_dir
+        rel_p = relpath(filepath, input_dir)
+        output_filename = rel_p.rsplit(".", 1)[0] + ".pt"
+        output_filepath = join(output_dir, output_filename)
+        os.makedirs(dirname(output_filepath), exist_ok=True)
+
+        if exists(output_filepath):
+            continue
 
         # Carrega áudio
         audio_data, sr = torchaudio.load(filepath)
@@ -192,9 +196,6 @@ def extract_speaker_embeddings(
         if normalize:
             embedding = torch.nn.functional.normalize(embedding.unsqueeze(0), dim=-1).squeeze(0)
 
-        # Salva
-        output_filename = basename(filepath).rsplit(".", 1)[0] + ".pt"
-        output_filepath = join(output_subdir, output_filename)
         torch.save(embedding.cpu(), output_filepath)
 
 
