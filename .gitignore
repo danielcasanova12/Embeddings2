@@ -16,3 +16,8 @@
 
 /venv_embs
 *.pyc
+*.pdf
+*.png
+*.jpg
+*.R
+/datasets/

@@ -159,7 +159,17 @@ def extract_speaker_embeddings(
                     window   = 3 * sr
                     hop      = 1 * sr
                     chunks   = [wav[:, i:i + window] for i in range(0, wav.shape[1], hop) if i + window // 2 <= wav.shape[1]]
+                    
+                    # Fallback: Se o áudio for muito curto, usa o áudio inteiro
+                    if not chunks:
+                        chunks = [wav]
+
                     embeds   = [model.encode_batch(c).squeeze() for c in chunks]
+                    
+                    # Garante que embeds seja uma lista de tensores 1D para o mean(dim=0)
+                    if len(embeds) == 1 and embeds[0].dim() == 0:
+                        embeds = [e.unsqueeze(0) for e in embeds]
+                        
                     embedding = torch.stack(embeds).mean(dim=0)
                 else:
                     embedding = model.encode_batch(wav).squeeze()  # [D]
@@ -176,6 +186,12 @@ def extract_speaker_embeddings(
                             break
                         e = model.extract_embedding_from_data(chunk, sr)
                         embeds.append(torch.from_numpy(e))
+                    
+                    # Fallback: Se a lista estiver vazia por causa de um áudio curto
+                    if not embeds:
+                        e = model.extract_embedding_from_data(audio_np, sr)
+                        embeds.append(torch.from_numpy(e))
+
                     embedding = torch.stack(embeds).mean(dim=0)
                 else:
                     emb = model.extract_embedding_from_data(audio_np, sr)
@@ -194,6 +210,9 @@ def extract_speaker_embeddings(
 
         # Normalização L2 (útil para similaridade cossenoidal)
         if normalize:
+            # Caso a dimensão se perca no squeeze, precisamos garantir que seja 1D
+            if embedding.dim() == 0:
+                embedding = embedding.unsqueeze(0)
             embedding = torch.nn.functional.normalize(embedding.unsqueeze(0), dim=-1).squeeze(0)
 
         torch.save(embedding.cpu(), output_filepath)
