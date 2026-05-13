@@ -22,7 +22,7 @@ def main():
     parser = argparse.ArgumentParser(description="Executa todos os experimentos configurados.")
     parser.add_argument("-d", "--dataset-config", default="configs/datasets/bvcc.yaml", help="Configuração do dataset")
     parser.add_argument("-m", "--model-defaults", default="configs/model.yaml", help="Configuração base/default")
-    parser.add_argument("-p", "--pattern", default="configs/experiments/ab*/*.yaml", help="Padrão de busca para experimentos")
+    parser.add_argument("-p", "--pattern", default="configs/experiments/**/*.yaml", help="Padrão de busca para experimentos")
     args = parser.parse_args()
 
     # 1. Carregar configurações base
@@ -30,7 +30,7 @@ def main():
     dataset_cfg    = OmegaConf.load(args.dataset_config)
 
     # 2. Encontrar todos os arquivos de experimento
-    experiment_files = glob.glob(args.pattern)
+    experiment_files = glob.glob(args.pattern, recursive=True)
     print(f"Encontrados {len(experiment_files)} experimentos para rodar.")
 
     for exp_file in sorted(experiment_files):

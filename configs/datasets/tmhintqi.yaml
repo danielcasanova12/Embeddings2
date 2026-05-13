@@ -1,0 +1,14 @@
+# configs/datasets/tmhintqi.yaml
+# Dataset configuration for TMHINTQI
+
+datasets:
+  name: "tmhintqi"
+  train:
+    metadata_path: "/home/time_mos/casanova/Embeddings/datasets/Datasets_mos/TMHINTQI/train_with_embs.csv"
+    target_column: "mos"
+  val:
+    metadata_path: "/home/time_mos/casanova/Embeddings/datasets/Datasets_mos/TMHINTQI/val_with_embs.csv"
+    target_column: "mos"
+  test:
+    metadata_path: "/home/time_mos/casanova/Embeddings/datasets/Datasets_mos/TMHINTQI/test_with_embs.csv"
+    target_column: "mos"

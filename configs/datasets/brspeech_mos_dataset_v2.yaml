@@ -1,0 +1,14 @@
+# configs/datasets/brspeech_mos_dataset_v2.yaml
+# Dataset configuration for BRSPEECH_MOS_DATASET_v2
+
+datasets:
+  name: "brspeech_mos_dataset_v2"
+  train:
+    metadata_path: "/home/time_mos/casanova/Embeddings/datasets/Datasets_mos/BRSPEECH_MOS_DATASET_v2/train_with_embs.csv"
+    target_column: "mos"
+  val:
+    metadata_path: "/home/time_mos/casanova/Embeddings/datasets/Datasets_mos/BRSPEECH_MOS_DATASET_v2/val_with_embs.csv"
+    target_column: "mos"
+  test:
+    metadata_path: "/home/time_mos/casanova/Embeddings/datasets/Datasets_mos/BRSPEECH_MOS_DATASET_v2/test_with_embs.csv"
+    target_column: "mos"
