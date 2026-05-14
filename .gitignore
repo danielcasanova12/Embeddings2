@@ -21,3 +21,5 @@
 *.jpg
 *.R
 /datasets/
+*.ckpt
+*.yaml

@@ -3,7 +3,15 @@ import time
 import argparse
 import pandas as pd
 import glob
+import datetime
 from omegaconf import OmegaConf
+
+# ReportLab imports
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
 from src.train import run_experiment
 
 # Caminhos padrão dos CSVs de resultados
@@ -17,6 +25,51 @@ def save_to_csv(row_dict, csv_path):
         df.to_csv(csv_path, index=False)
     else:
         df.to_csv(csv_path, mode='a', header=False, index=False)
+
+def gerar_relatorio_pdf(resultados, caminho_saida):
+    """Gera um relatório em PDF contendo a tabela de resultados dos experimentos."""
+    if not resultados:
+        return
+
+    # Usar modo paisagem para melhor acomodação das colunas
+    doc = SimpleDocTemplate(str(caminho_saida), pagesize=landscape(letter))
+    elementos = []
+    estilos = getSampleStyleSheet()
+    estilo_normal = estilos['Normal']
+    
+    titulo = Paragraph("Resumo dos Experimentos", estilos['Title'])
+    elementos.append(titulo)
+    elementos.append(Spacer(1, 12))
+
+    # Obter cabeçalhos das chaves do primeiro dicionário
+    cabecalhos = list(resultados[0].keys())
+    
+    dados_tabela = []
+    
+    # Linha de cabeçalho
+    linha_cabecalho = [Paragraph(f"<b>{c}</b>", estilo_normal) for c in cabecalhos]
+    dados_tabela.append(linha_cabecalho)
+
+    # Linhas de dados
+    for linha in resultados:
+        linha_dados = [Paragraph(str(linha.get(c, "")), estilo_normal) for c in cabecalhos]
+        dados_tabela.append(linha_dados)
+
+    tabela = Table(dados_tabela)
+
+    estilo_tabela = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ])
+    tabela.setStyle(estilo_tabela)
+    elementos.append(tabela)
+
+    doc.build(elementos)
 
 def main():
     parser = argparse.ArgumentParser(description="Executa todos os experimentos configurados.")
@@ -32,6 +85,9 @@ def main():
     # 2. Encontrar todos os arquivos de experimento
     experiment_files = glob.glob(args.pattern, recursive=True)
     print(f"Encontrados {len(experiment_files)} experimentos para rodar.")
+
+    # Lista para acumular os resultados para o PDF
+    pdf_results = []
 
     for exp_file in sorted(experiment_files):
         print(f"\n{'='*60}")
@@ -82,6 +138,17 @@ def main():
             }
             save_to_csv(test_record, TEST_RESULTS_CSV)
             
+            # 6. Preparar dados resumidos para o PDF
+            pdf_results.append({
+                "Experimento": eval_row["experiment"],
+                "Modelo": eval_row["model_type"],
+                "Tempo (s)": f"{duration:.2f}",
+                "Status": "Sucesso",
+                "Test MSE": f"{eval_row.get('test_mse', 0):.4f}",
+                "Test Pearson": f"{eval_row.get('test_pearson', 0):.4f}",
+                "Test Spearman": f"{eval_row.get('test_spearman', 0):.4f}"
+            })
+            
             print(f"Finalizado com sucesso em {duration:.2f}s")
             
         except Exception as e:
@@ -98,6 +165,31 @@ def main():
                 "embeddings":       "?"
             }
             save_to_csv(error_record, TRAIN_RESULTS_CSV)
+            
+            # Registrar erro para o PDF
+            pdf_results.append({
+                "Experimento": os.path.basename(exp_file),
+                "Modelo": "-",
+                "Tempo (s)": f"{duration:.2f}",
+                "Status": "Erro",
+                "Test MSE": "-",
+                "Test Pearson": "-",
+                "Test Spearman": "-"
+            })
+
+    # Após rodar todos os experimentos, gerar o PDF
+    if pdf_results:
+        # Obter nome do dataset e data atual
+        dataset_name = dataset_cfg.datasets.name
+        data_atual = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        # Montar o nome do arquivo dinâmico
+        pdf_filename = f"{dataset_name}-{data_atual}.pdf"
+        
+        # Gerar e salvar o PDF
+        gerar_relatorio_pdf(pdf_results, pdf_filename)
+        print(f"\n{'='*60}")
+        print(f"Relatório final em PDF salvo com sucesso em: {pdf_filename}")
 
 if __name__ == "__main__":
     main()
