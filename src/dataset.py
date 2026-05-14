@@ -24,12 +24,14 @@ class MultiEmbeddingMOSDataset(Dataset):
         self,
         metadata_path: str,
         embedding_columns: List[str],     # lista de colunas com caminhos de .pt
+        embedding_dims: List[int] = None, # dimensões esperadas (D) para cada embedding
         target_column: str = "mos",
         layer: int = -1,
         pool_time: bool = True,
     ):
         self.df = pd.read_csv(metadata_path)
         self.emb_cols   = embedding_columns
+        self.emb_dims   = embedding_dims
         self.target_col = target_column
         self.layer      = layer
         self.pool_time  = pool_time
@@ -37,17 +39,29 @@ class MultiEmbeddingMOSDataset(Dataset):
     def __len__(self):
         return len(self.df)
 
-    def _load_emb(self, path: str) -> torch.Tensor:
+    def _load_emb(self, path: str, expected_dim: int = None) -> torch.Tensor:
         emb = torch.load(path, map_location="cpu", weights_only=True).float()
         if emb.dim() == 3:
             emb = emb[self.layer]
-        if emb.dim() == 2 and self.pool_time:
-            emb = emb.mean(dim=0)
+        
+        if self.pool_time:
+            if emb.dim() == 2:
+                emb = emb.mean(dim=0)
+            elif emb.dim() == 1 and expected_dim is not None:
+                # Se o tensor é 1D mas o tamanho difere do esperado (D),
+                # assumimos que é uma sequência [T] que precisa de pooling -> [1]
+                if emb.shape[0] != expected_dim:
+                    emb = emb.mean(dim=0, keepdim=True)
         return emb
 
     def __getitem__(self, idx):
         row  = self.df.iloc[idx]
-        embs = [self._load_emb(row[col]) for col in self.emb_cols]
+        
+        embs = []
+        for i, col in enumerate(self.emb_cols):
+            exp_dim = self.emb_dims[i] if self.emb_dims else None
+            embs.append(self._load_emb(row[col], exp_dim))
+            
         mos  = torch.tensor(float(row[self.target_col]), dtype=torch.float32)
         return embs, mos
 
@@ -69,11 +83,13 @@ def build_loaders(cfg: dict):
     ds_cfg = cfg["datasets"]
     tr_cfg = cfg["train"]
     emb_cols = [e["column"] for e in cfg["embeddings"]]
+    emb_dims = [e["dim"] for e in cfg["embeddings"]]
 
     def _ds(split_cfg):
         return MultiEmbeddingMOSDataset(
             metadata_path     = split_cfg["metadata_path"],
             embedding_columns = emb_cols,
+            embedding_dims    = emb_dims,
             target_column     = split_cfg["target_column"],
         )
 
