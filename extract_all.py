@@ -13,6 +13,9 @@ from extract_embs.extract_whisper_embeddings import extract_whisper_embeddings
 from extract_embs.extract_contentvec import extract_contentvec_embeddings
 from extract_embs.extract_speaker_embeddings import extract_speaker_embeddings
 from extract_embs.extract_f0 import extract_f0_embeddings
+from extract_embs.extract_hubert_embeddings import extract_hubert_embeddings
+from extract_embs.extract_wavlm_embeddings import extract_wavlm_embeddings
+from extract_embs.extract_wav2vec2_embeddings import extract_wav2vec2_embeddings
 
 
 # ---------------------------------------------------------------------------
@@ -146,13 +149,16 @@ def main():
     output_content = join(output_base, "contentvec")
     output_speaker = join(output_base, "speaker")
     output_f0      = join(output_base, "f0")
+    output_hubert  = join(output_base, "hubert")
+    output_wavlm   = join(output_base, "wavlm")
+    output_wav2vec2 = join(output_base, "wav2vec2")
 
     print(f"\nTotal de arquivos a processar: {len(filelist)}")
 
     # ------------------------------------------------------------------
-    # [1/4] Whisper
+    # [1/7] Whisper
     # ------------------------------------------------------------------
-    print("\n--- [1/4] Extração: Whisper ---")
+    print("\n--- [1/7] Extração: Whisper ---")
     report.begin_step("whisper")
     try:
         extract_whisper_embeddings(filelist, input_dir, output_whisper, "whisper-large-v3")
@@ -163,9 +169,9 @@ def main():
         print(f"ERRO FATAL em Whisper: {e}")
 
     # ------------------------------------------------------------------
-    # [2/4] ContentVec
+    # [2/7] ContentVec
     # ------------------------------------------------------------------
-    print("\n--- [2/4] Extração: ContentVec ---")
+    print("\n--- [2/7] Extração: ContentVec ---")
     report.begin_step("contentvec")
     try:
         extract_contentvec_embeddings(filelist, input_dir, output_content, "contentvec-best", layer=-1, pool=False)
@@ -176,9 +182,9 @@ def main():
         print(f"ERRO FATAL em ContentVec: {e}")
 
     # ------------------------------------------------------------------
-    # [3/4] Speaker ECAPA-TDNN
+    # [3/7] Speaker ECAPA-TDNN
     # ------------------------------------------------------------------
-    print("\n--- [3/4] Extração: Speaker (ECAPA-TDNN) ---")
+    print("\n--- [3/7] Extração: Speaker (ECAPA-TDNN) ---")
     report.begin_step("speaker")
     try:
         extract_speaker_embeddings(filelist, input_dir, output_speaker, "ecapa-tdnn", aggregate="mean", normalize=True)
@@ -189,9 +195,9 @@ def main():
         print(f"ERRO FATAL em Speaker: {e}")
 
     # ------------------------------------------------------------------
-    # [4/4] F0 CREPE
+    # [4/7] F0 CREPE
     # ------------------------------------------------------------------
-    print("\n--- [4/4] Extração: F0 (CREPE) ---")
+    print("\n--- [4/7] Extração: F0 (CREPE) ---")
     report.begin_step("f0")
     try:
         extract_f0_embeddings(filelist, input_dir, output_f0, backend="crepe",
@@ -201,6 +207,45 @@ def main():
     except Exception as e:
         report.fail_step("f0", e)
         print(f"ERRO FATAL em F0: {e}")
+
+    # ------------------------------------------------------------------
+    # [5/7] HuBERT
+    # ------------------------------------------------------------------
+    print("\n--- [5/7] Extração: HuBERT ---")
+    report.begin_step("hubert")
+    try:
+        extract_hubert_embeddings(filelist, input_dir, output_hubert, "hubert-base", layer=-1, pool=False)
+        verify_outputs(filelist, input_dir, output_hubert, report, "hubert")
+        report.ok_step("hubert")
+    except Exception as e:
+        report.fail_step("hubert", e)
+        print(f"ERRO FATAL em HuBERT: {e}")
+
+    # ------------------------------------------------------------------
+    # [6/7] WavLM
+    # ------------------------------------------------------------------
+    print("\n--- [6/7] Extração: WavLM ---")
+    report.begin_step("wavlm")
+    try:
+        extract_wavlm_embeddings(filelist, input_dir, output_wavlm, "wavlm-base-plus", layer=-1, pool=False)
+        verify_outputs(filelist, input_dir, output_wavlm, report, "wavlm")
+        report.ok_step("wavlm")
+    except Exception as e:
+        report.fail_step("wavlm", e)
+        print(f"ERRO FATAL em WavLM: {e}")
+
+    # ------------------------------------------------------------------
+    # [7/7] wav2vec 2.0
+    # ------------------------------------------------------------------
+    print("\n--- [7/7] Extração: wav2vec 2.0 ---")
+    report.begin_step("wav2vec2")
+    try:
+        extract_wav2vec2_embeddings(filelist, input_dir, output_wav2vec2, "wav2vec2-base", layer=-1, pool=False)
+        verify_outputs(filelist, input_dir, output_wav2vec2, report, "wav2vec2")
+        report.ok_step("wav2vec2")
+    except Exception as e:
+        report.fail_step("wav2vec2", e)
+        print(f"ERRO FATAL em wav2vec 2.0: {e}")
 
     # ------------------------------------------------------------------
     # Atualizar CSV
@@ -216,6 +261,9 @@ def main():
     df["contentvec_path"] = [get_emb_path(f, output_content, input_dir) for f in filelist]
     df["speaker_path"]    = [get_emb_path(f, output_speaker, input_dir) for f in filelist]
     df["f0_path"]         = [get_emb_path(f, output_f0,      input_dir) for f in filelist]
+    df["hubert_path"]     = [get_emb_path(f, output_hubert,  input_dir) for f in filelist]
+    df["wavlm_path"]      = [get_emb_path(f, output_wavlm,   input_dir) for f in filelist]
+    df["wav2vec2_path"]   = [get_emb_path(f, output_wav2vec2, input_dir) for f in filelist]
 
     if args.csv_path:
         new_csv = args.csv_path.replace(".csv", args.suffix)
