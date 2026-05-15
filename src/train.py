@@ -57,12 +57,18 @@ def run_experiment(cfg: dict) -> tuple[list[dict], dict]:
         enable_progress_bar=True,
     )
 
-    trainer.fit(model, train_loader, val_loader)
-    test_results = trainer.test(model, test_loader, ckpt_path="best", verbose=False)
+    if not cfg.get("evaluate_only", False):
+        trainer.fit(model, train_loader, val_loader)
+        ckpt_path = "best"
+    else:
+        print(f"Modo EVALUATE_ONLY ativado. Carregando: {cfg.get('checkpoint_path')}")
+        ckpt_path = cfg.get("checkpoint_path")
+
+    test_results = trainer.test(model, test_loader, ckpt_path=ckpt_path, verbose=False)
     test_metrics = test_results[0] if test_results else {}
 
     # Resumo por época (Lightning CSV logger)
-    train_rows = _extract_epoch_metrics(trainer, exp_name)
+    train_rows = _extract_epoch_metrics(trainer, exp_name) if not cfg.get("evaluate_only", False) else []
 
     eval_row = {
         "experiment":        exp_name,

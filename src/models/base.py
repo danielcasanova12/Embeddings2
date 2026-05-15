@@ -16,6 +16,7 @@ from .architectures import (
     ConcatFusionMOS,
     ReliabilityFusionMOS,
     TransformerFusionMOS,
+    LinearProbeMOS,
 )
 
 ARCH_MAP = {
@@ -24,6 +25,7 @@ ARCH_MAP = {
     "concat_fusion":      ConcatFusionMOS,
     "reliability_fusion": ReliabilityFusionMOS,
     "transformer_fusion": TransformerFusionMOS,
+    "probing":            LinearProbeMOS,
 }
 
 
@@ -49,18 +51,19 @@ class MOSPredictor(pl.LightningModule):
 
     # ── forward ──────────────────────────────────────────────────
 
-    def forward(self, embs):
-        return self.model(embs)
+    def forward(self, embs, masks=None):
+        return self.model(embs, masks)
 
     # ── loss ─────────────────────────────────────────────────────
 
-    def _compute_loss(self, out: dict, mos: torch.Tensor) -> torch.Tensor:
-        loss = self.mse(out["mos"], mos)
+    def _compute_loss(self, out: dict, target: torch.Tensor) -> torch.Tensor:
+        # out["mos"] é a saída principal independente da task
+        loss = self.mse(out["mos"], target)
 
         # Loss auxiliar de fatores (se architecture retornar "factors")
         if self.factor_weight > 0 and "factors" in out:
             factor_loss = torch.stack([
-                self.mse(score, mos)
+                self.mse(score, target) # Assume MSE para fatores
                 for score in out["factors"].values()
             ]).mean()
             loss = loss + self.factor_weight * factor_loss
@@ -69,32 +72,43 @@ class MOSPredictor(pl.LightningModule):
 
     # ── steps ────────────────────────────────────────────────────
 
+    def _get_target(self, mos, extras_list):
+        if self.cfg.get("task") == "probing":
+            target_col = self.cfg.get("probing", {}).get("target_column")
+            # Extrai do extras_list
+            targets = [e[target_col] for e in extras_list]
+            return torch.tensor(targets, device=self.device).float()
+        return mos
+
     def training_step(self, batch, _):
-        embs, mos = batch
-        out  = self(embs)
-        loss = self._compute_loss(out, mos)
+        embs, mos, masks, extras = batch
+        target = self._get_target(mos, extras)
+        out  = self(embs, masks)
+        loss = self._compute_loss(out, target)
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, _):
-        embs, mos = batch
-        out  = self(embs)
-        loss = self._compute_loss(out, mos)
+        embs, mos, masks, extras = batch
+        target = self._get_target(mos, extras)
+        out  = self(embs, masks)
+        loss = self._compute_loss(out, target)
         self.log("val/loss", loss, on_epoch=True, prog_bar=True)
         self._val_p.append(out["mos"].detach().cpu())
-        self._val_t.append(mos.detach().cpu())
+        self._val_t.append(target.detach().cpu())
 
     def on_validation_epoch_end(self):
         self._flush(self._val_p, self._val_t, "val")
         self._val_p.clear(); self._val_t.clear()
 
     def test_step(self, batch, _):
-        embs, mos = batch
-        out  = self(embs)
-        loss = self._compute_loss(out, mos)
+        embs, mos, masks, extras = batch
+        target = self._get_target(mos, extras)
+        out  = self(embs, masks)
+        loss = self._compute_loss(out, target)
         self.log("test/loss", loss, on_epoch=True)
         self._test_p.append(out["mos"].detach().cpu())
-        self._test_t.append(mos.detach().cpu())
+        self._test_t.append(target.detach().cpu())
 
     def on_test_epoch_end(self):
         self._flush(self._test_p, self._test_t, "test")

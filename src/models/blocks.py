@@ -33,18 +33,91 @@ class MLP(nn.Module):
         return self.net(x).squeeze(-1)
 
 
+# ---------------------------------------------------------------------------
+# Pooling Strategies (Exp 8)
+# ---------------------------------------------------------------------------
+
+class MeanPool(nn.Module):
+    def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
+        # x: [B, T, D]
+        if mask is not None:
+            # mask: [B, T]
+            mask = mask.unsqueeze(-1).float()
+            return (x * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
+        return x.mean(dim=1)
+
+
+class StatsPool(nn.Module):
+    """Mean + Standard Deviation pooling -> [B, 2*D]"""
+    def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
+        if mask is not None:
+            mask = mask.unsqueeze(-1).float()
+            mu = (x * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
+            var = ((x - mu.unsqueeze(1))**2 * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
+            std = torch.sqrt(var.clamp(min=1e-9))
+        else:
+            mu = x.mean(dim=1)
+            std = x.std(dim=1)
+        return torch.cat([mu, std], dim=-1)
+
+
+class ASPPool(nn.Module):
+    """Attentive Statistics Pooling."""
+    def __init__(self, input_dim: int, hidden_dim: int = 128):
+        super().__init__()
+        self.attention = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, input_dim),
+            nn.Softmax(dim=1)
+        )
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
+        # x: [B, T, D]
+        weights = self.attention(x)  # [B, T, D]
+        
+        if mask is not None:
+            weights = weights * mask.unsqueeze(-1).float()
+            weights = weights / weights.sum(dim=1, keepdim=True).clamp(min=1e-9)
+            
+        mu = torch.sum(x * weights, dim=1)
+        var = torch.sum(x**2 * weights, dim=1) - mu**2
+        std = torch.sqrt(var.clamp(min=1e-9))
+        
+        return torch.cat([mu, std], dim=-1)
+
+
+def get_pooling_layer(name: str, input_dim: int = None):
+    name = name.lower()
+    if name == "mean":
+        return MeanPool()
+    if name == "stats":
+        return StatsPool()
+    if name == "asp":
+        return ASPPool(input_dim)
+    raise ValueError(f"Pooling unknown: {name}")
+
+
+# ---------------------------------------------------------------------------
+# Adapters (Exp 2 & 3)
+# ---------------------------------------------------------------------------
+
 class Adapter(nn.Module):
     """
     Projeta um embedding de dim_in → adapter_dim.
-    Linear → LayerNorm? → Dropout
+    Linear(d_original → k) → LayerNorm → ReLU → Linear(k → k)
     """
     def __init__(self, dim_in: int, adapter_dim: int,
                  dropout: float = 0.1, use_norm: bool = True):
         super().__init__()
-        layers: list[nn.Module] = [nn.Linear(dim_in, adapter_dim)]
+        layers = [nn.Linear(dim_in, adapter_dim)]
         if use_norm:
             layers.append(nn.LayerNorm(adapter_dim))
-        layers.append(nn.Dropout(dropout))
+        layers += [
+            nn.ReLU(),
+            nn.Linear(adapter_dim, adapter_dim),
+            nn.Dropout(dropout)
+        ]
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
