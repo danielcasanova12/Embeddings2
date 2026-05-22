@@ -101,52 +101,19 @@ def verify_outputs(filelist: List[str], input_dir: str, output_dir: str, report:
             report.add_missing(step_name, expected)
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Extrai todos os embeddings (Whisper, ContentVec, Speaker, F0) e Transcrições ASR."
-    )
-    parser.add_argument("-b", "--base-dir",       required=True)
-    parser.add_argument("-i", "--input-dir-name",  required=True)
-    parser.add_argument("-o", "--output-base",     default="embeddings")
-    parser.add_argument("-c", "--csv-path")
-    parser.add_argument("-col", "--column-name",   default="filename")
-    parser.add_argument("--suffix",                default="_with_embs.csv")
-    parser.add_argument("--report-dir",            default=None,
-                        help="Pasta para salvar o JSON de relatório (padrão: output_base)")
-    parser.add_argument("--asr-model",             default="medium.en",
-                        help="Modelo Whisper para transcrição (medium.en é o padrão do protocolo)")
-    args = parser.parse_args()
-
-    input_dir   = join(args.base_dir, args.input_dir_name)
-    output_base = args.output_base if os.path.isabs(args.output_base) else join(args.base_dir, args.output_base)
-    report_dir  = args.report_dir or output_base
+def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, column_name, asr_model, report_dir, suffix):
+    # Relatório
+    report = ExtractionReport(csv_path=csv_path, output_base=output_base)
     os.makedirs(report_dir, exist_ok=True)
 
-    # Relatório
-    report = ExtractionReport(csv_path=args.csv_path or "glob", output_base=output_base)
-
-    # ------------------------------------------------------------------
+    input_dir   = join(base_dir, input_dir_name)
+    
     # 1. Coletar lista de arquivos
-    # ------------------------------------------------------------------
     filelist: List[str] = []
-    df = None
-
-    if args.csv_path and exists(args.csv_path):
-        df = pd.read_csv(args.csv_path)
-        for f in df[args.column_name]:
-            full = f if os.path.isabs(str(f)) else join(input_dir, str(f))
-            filelist.append(full)
-    else:
-        print(f"Buscando arquivos .wav em: {input_dir}")
-        filelist = glob.glob(join(input_dir, "**", "*.wav"), recursive=True)
-        if not filelist:
-            print("Nenhum arquivo .wav encontrado!")
-            return
-        df = pd.DataFrame({args.column_name: filelist})
+    df = pd.read_csv(csv_path)
+    for f in df[column_name]:
+        full = f if os.path.isabs(str(f)) else join(input_dir, str(f))
+        filelist.append(full)
 
     # Pastas de saída
     output_whisper = join(output_base, "whisper")
@@ -157,17 +124,15 @@ def main():
     output_wavlm   = join(output_base, "wavlm")
     output_wav2vec2 = join(output_base, "wav2vec2")
 
-    print(f"\nTotal de arquivos a processar: {len(filelist)}")
+    print(f"\nTotal de arquivos a processar ({csv_path}): {len(filelist)}")
 
-    # ------------------------------------------------------------------
-    # [0/8] ASR Transcription (Novo)
-    # ------------------------------------------------------------------
-    print(f"\n--- [0/8] Transcrição ASR: Whisper ({args.asr_model}) ---")
+    # [0/8] ASR Transcription
+    print(f"\n--- [0/8] Transcrição ASR: Whisper ({asr_model}) ---")
     report.begin_step("transcription")
     transcripts = []
     try:
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = whisper.load_model(args.asr_model, device=device)
+        model = whisper.load_model(asr_model, device=device)
         from tqdm import tqdm
         for filepath in tqdm(filelist, desc="Transcrevendo"):
             res = model.transcribe(filepath, fp16=(device=="cuda"))
@@ -177,11 +142,9 @@ def main():
     except Exception as e:
         report.fail_step("transcription", e)
         print(f"ERRO FATAL em Transcrição: {e}")
-        df["transcript"] = [""] * len(filelist)
+        if "transcript" not in df.columns: df["transcript"] = [""] * len(filelist)
 
-    # ------------------------------------------------------------------
     # [1/8] Whisper Embeddings
-    # ------------------------------------------------------------------
     print("\n--- [1/8] Extração: Whisper Embeddings ---")
     report.begin_step("whisper")
     try:
@@ -190,11 +153,8 @@ def main():
         report.ok_step("whisper")
     except Exception as e:
         report.fail_step("whisper", e)
-        print(f"ERRO FATAL em Whisper: {e}")
 
-    # ------------------------------------------------------------------
     # [2/8] ContentVec
-    # ------------------------------------------------------------------
     print("\n--- [2/8] Extração: ContentVec ---")
     report.begin_step("contentvec")
     try:
@@ -203,11 +163,8 @@ def main():
         report.ok_step("contentvec")
     except Exception as e:
         report.fail_step("contentvec", e)
-        print(f"ERRO FATAL em ContentVec: {e}")
 
-    # ------------------------------------------------------------------
     # [3/8] Speaker ECAPA-TDNN
-    # ------------------------------------------------------------------
     print("\n--- [3/8] Extração: Speaker (ECAPA-TDNN) ---")
     report.begin_step("speaker")
     try:
@@ -216,11 +173,8 @@ def main():
         report.ok_step("speaker")
     except Exception as e:
         report.fail_step("speaker", e)
-        print(f"ERRO FATAL em Speaker: {e}")
 
-    # ------------------------------------------------------------------
     # [4/8] F0 CREPE
-    # ------------------------------------------------------------------
     print("\n--- [4/8] Extração: F0 (CREPE) ---")
     report.begin_step("f0")
     try:
@@ -230,11 +184,8 @@ def main():
         report.ok_step("f0")
     except Exception as e:
         report.fail_step("f0", e)
-        print(f"ERRO FATAL em F0: {e}")
 
-    # ------------------------------------------------------------------
     # [5/8] HuBERT
-    # ------------------------------------------------------------------
     print("\n--- [5/8] Extração: HuBERT ---")
     report.begin_step("hubert")
     try:
@@ -243,11 +194,8 @@ def main():
         report.ok_step("hubert")
     except Exception as e:
         report.fail_step("hubert", e)
-        print(f"ERRO FATAL em HuBERT: {e}")
 
-    # ------------------------------------------------------------------
     # [6/8] WavLM
-    # ------------------------------------------------------------------
     print("\n--- [6/8] Extração: WavLM ---")
     report.begin_step("wavlm")
     try:
@@ -256,11 +204,8 @@ def main():
         report.ok_step("wavlm")
     except Exception as e:
         report.fail_step("wavlm", e)
-        print(f"ERRO FATAL em WavLM: {e}")
 
-    # ------------------------------------------------------------------
     # [7/8] wav2vec 2.0
-    # ------------------------------------------------------------------
     print("\n--- [7/8] Extração: wav2vec 2.0 ---")
     report.begin_step("wav2vec2")
     try:
@@ -269,13 +214,8 @@ def main():
         report.ok_step("wav2vec2")
     except Exception as e:
         report.fail_step("wav2vec2", e)
-        print(f"ERRO FATAL em wav2vec 2.0: {e}")
 
-    # ------------------------------------------------------------------
     # Atualizar CSV
-    # ------------------------------------------------------------------
-    print("\n--- Atualizando CSV com caminhos dos embeddings e transcrição ---")
-
     def get_emb_path(audio_path, out_dir, input_dir):
         rel_p    = os.path.relpath(audio_path, input_dir)
         emb_file = splitext(rel_p)[0] + ".pt"
@@ -289,25 +229,101 @@ def main():
     df["wavlm_path"]      = [get_emb_path(f, output_wavlm,   input_dir) for f in filelist]
     df["wav2vec2_path"]   = [get_emb_path(f, output_wav2vec2, input_dir) for f in filelist]
 
-    if args.csv_path:
-        new_csv = args.csv_path.replace(".csv", args.suffix)
-    else:
-        new_csv = join(args.base_dir, "dataset" + args.suffix)
+    new_csv = csv_path.replace(".csv", suffix)
     df.to_csv(new_csv, index=False)
     print(f"CSV salvo em: {new_csv}")
 
-    # ------------------------------------------------------------------
-    # Relatório final
-    # ------------------------------------------------------------------
     report.finalize()
     report.print_summary()
-
-    # Salva JSON
-    tag         = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_path = join(report_dir, f"report_{tag}.json")
-    with open(report_path, "w", encoding="utf-8") as fh:
+    tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+    with open(join(report_dir, f"report_{tag}.json"), "w", encoding="utf-8") as fh:
         json.dump(report.to_dict(), fh, ensure_ascii=False, indent=2)
-    print(f"\nRelatório JSON salvo em: {report_path}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Extrai todos os embeddings e Transcrições ASR."
+    )
+    parser.add_argument("-b", "--base-dir",       help="Diretório base do dataset")
+    parser.add_argument("-i", "--input-dir-name",  help="Subpasta de áudios dentro do base-dir")
+    parser.add_argument("-o", "--output-base",     default="embeddings")
+    parser.add_argument("-c", "--csv-path",       help="CSV com lista de arquivos")
+    parser.add_argument("-col", "--column-name",   default="filename")
+    parser.add_argument("--suffix",                default="_with_embs.csv")
+    parser.add_argument("--report-dir",            default="reports")
+    parser.add_argument("--asr-model",             default="medium")
+    
+    # Novas opções para automação
+    parser.add_argument("--dataset-config", help="Caminho para um YAML de dataset")
+    parser.add_argument("--all-datasets", action="store_true", help="Processa todos os YAMLs em configs/datasets/")
+    
+    args = parser.parse_args()
+
+    from omegaconf import OmegaConf
+    
+    configs_to_process = []
+    if args.all_datasets:
+        configs_to_process = glob.glob("configs/datasets/*.yaml")
+    elif args.dataset_config:
+        configs_to_process = [args.dataset_config]
+
+    if configs_to_process:
+        for cfg_path in configs_to_process:
+            print(f"\nProcessing dataset config: {cfg_path}")
+            cfg = OmegaConf.load(cfg_path)
+            ds_name = cfg.datasets.name
+            
+            for split in ["train", "val", "test"]:
+                if split in cfg.datasets:
+                    csv_path = cfg.datasets[split].metadata_path
+                    if not exists(csv_path):
+                        print(f"Aviso: CSV não encontrado para {ds_name} {split}: {csv_path}")
+                        continue
+                    
+                    # Tenta inferir base_dir e input_dir
+                    # Frequentemente o base_dir é o pai da pasta 'sets' ou onde o CSV está
+                    base_dir = os.path.dirname(os.path.dirname(csv_path)) 
+                    # Se o CSV estiver na raiz do dataset, o acima pode estar errado.
+                    # Vamos usar o diretório do CSV como fallback.
+                    if not exists(base_dir): base_dir = os.path.dirname(csv_path)
+                    
+                    output_base = f"embeddings/{ds_name}/{split}"
+                    
+                    run_extraction_on_csv(
+                        csv_path       = csv_path,
+                        base_dir       = base_dir,
+                        input_dir_name = ".",
+                        output_base    = output_base,
+                        column_name    = cfg.datasets[split].get("column_name", args.column_name),
+                        asr_model      = args.asr_model,
+                        report_dir     = join(args.report_dir, f"{ds_name}_{split}"),
+                        suffix         = args.suffix
+                    )
+    else:
+        # Modo manual
+        if not args.base_dir or not args.input_dir_name:
+            print("Erro: Forneça --base-dir e --input-dir-name ou use --dataset-config / --all-datasets")
+            return
+            
+        csv_path = args.csv_path
+        if not csv_path:
+            input_dir = join(args.base_dir, args.input_dir_name)
+            print(f"Buscando arquivos .wav em: {input_dir}")
+            filelist = glob.glob(join(input_dir, "**", "*.wav"), recursive=True)
+            df = pd.DataFrame({args.column_name: filelist})
+            csv_path = join(args.base_dir, "temp_filelist.csv")
+            df.to_csv(csv_path, index=False)
+
+        run_extraction_on_csv(
+            csv_path       = csv_path,
+            base_dir       = args.base_dir,
+            input_dir_name = args.input_dir_name,
+            output_base    = args.output_base,
+            column_name    = args.column_name,
+            asr_model      = args.asr_model,
+            report_dir     = args.report_dir,
+            suffix         = args.suffix
+        )
 
 
 if __name__ == "__main__":

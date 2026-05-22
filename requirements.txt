@@ -10,3 +10,11 @@ speechbrain
 pytorch-lightning
 omegaconf
 wandb
+openai-whisper
+sentence-transformers
+umap-learn
+matplotlib
+seaborn
+reportlab
+scikit-learn
+phonemizer
