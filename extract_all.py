@@ -8,6 +8,8 @@ from typing import List, Dict
 from os.path import join, exists, relpath, splitext
 
 import pandas as pd
+import whisper
+import torch
 
 from extract_embs.extract_whisper_embeddings import extract_whisper_embeddings
 from extract_embs.extract_contentvec import extract_contentvec_embeddings
@@ -105,7 +107,7 @@ def verify_outputs(filelist: List[str], input_dir: str, output_dir: str, report:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Extrai todos os embeddings (Whisper, ContentVec, Speaker, F0) com relatório de erros."
+        description="Extrai todos os embeddings (Whisper, ContentVec, Speaker, F0) e Transcrições ASR."
     )
     parser.add_argument("-b", "--base-dir",       required=True)
     parser.add_argument("-i", "--input-dir-name",  required=True)
@@ -115,6 +117,8 @@ def main():
     parser.add_argument("--suffix",                default="_with_embs.csv")
     parser.add_argument("--report-dir",            default=None,
                         help="Pasta para salvar o JSON de relatório (padrão: output_base)")
+    parser.add_argument("--asr-model",             default="medium.en",
+                        help="Modelo Whisper para transcrição (medium.en é o padrão do protocolo)")
     args = parser.parse_args()
 
     input_dir   = join(args.base_dir, args.input_dir_name)
@@ -156,12 +160,32 @@ def main():
     print(f"\nTotal de arquivos a processar: {len(filelist)}")
 
     # ------------------------------------------------------------------
-    # [1/7] Whisper
+    # [0/8] ASR Transcription (Novo)
     # ------------------------------------------------------------------
-    print("\n--- [1/7] Extração: Whisper ---")
+    print(f"\n--- [0/8] Transcrição ASR: Whisper ({args.asr_model}) ---")
+    report.begin_step("transcription")
+    transcripts = []
+    try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = whisper.load_model(args.asr_model, device=device)
+        from tqdm import tqdm
+        for filepath in tqdm(filelist, desc="Transcrevendo"):
+            res = model.transcribe(filepath, fp16=(device=="cuda"))
+            transcripts.append(res["text"].strip().lower())
+        df["transcript"] = transcripts
+        report.ok_step("transcription")
+    except Exception as e:
+        report.fail_step("transcription", e)
+        print(f"ERRO FATAL em Transcrição: {e}")
+        df["transcript"] = [""] * len(filelist)
+
+    # ------------------------------------------------------------------
+    # [1/8] Whisper Embeddings
+    # ------------------------------------------------------------------
+    print("\n--- [1/8] Extração: Whisper Embeddings ---")
     report.begin_step("whisper")
     try:
-        extract_whisper_embeddings(filelist, input_dir, output_whisper, "whisper-large-v3")
+        extract_whisper_embeddings(filelist, input_dir, output_whisper, "whisper-medium.en")
         verify_outputs(filelist, input_dir, output_whisper, report, "whisper")
         report.ok_step("whisper")
     except Exception as e:
@@ -169,9 +193,9 @@ def main():
         print(f"ERRO FATAL em Whisper: {e}")
 
     # ------------------------------------------------------------------
-    # [2/7] ContentVec
+    # [2/8] ContentVec
     # ------------------------------------------------------------------
-    print("\n--- [2/7] Extração: ContentVec ---")
+    print("\n--- [2/8] Extração: ContentVec ---")
     report.begin_step("contentvec")
     try:
         extract_contentvec_embeddings(filelist, input_dir, output_content, "contentvec-best", layer=-1, pool=False)
@@ -182,9 +206,9 @@ def main():
         print(f"ERRO FATAL em ContentVec: {e}")
 
     # ------------------------------------------------------------------
-    # [3/7] Speaker ECAPA-TDNN
+    # [3/8] Speaker ECAPA-TDNN
     # ------------------------------------------------------------------
-    print("\n--- [3/7] Extração: Speaker (ECAPA-TDNN) ---")
+    print("\n--- [3/8] Extração: Speaker (ECAPA-TDNN) ---")
     report.begin_step("speaker")
     try:
         extract_speaker_embeddings(filelist, input_dir, output_speaker, "ecapa-tdnn", aggregate="mean", normalize=True)
@@ -195,9 +219,9 @@ def main():
         print(f"ERRO FATAL em Speaker: {e}")
 
     # ------------------------------------------------------------------
-    # [4/7] F0 CREPE
+    # [4/8] F0 CREPE
     # ------------------------------------------------------------------
-    print("\n--- [4/7] Extração: F0 (CREPE) ---")
+    print("\n--- [4/8] Extração: F0 (CREPE) ---")
     report.begin_step("f0")
     try:
         extract_f0_embeddings(filelist, input_dir, output_f0, backend="crepe",
@@ -209,9 +233,9 @@ def main():
         print(f"ERRO FATAL em F0: {e}")
 
     # ------------------------------------------------------------------
-    # [5/7] HuBERT
+    # [5/8] HuBERT
     # ------------------------------------------------------------------
-    print("\n--- [5/7] Extração: HuBERT ---")
+    print("\n--- [5/8] Extração: HuBERT ---")
     report.begin_step("hubert")
     try:
         extract_hubert_embeddings(filelist, input_dir, output_hubert, "hubert-base", layer=-1, pool=False)
@@ -222,9 +246,9 @@ def main():
         print(f"ERRO FATAL em HuBERT: {e}")
 
     # ------------------------------------------------------------------
-    # [6/7] WavLM
+    # [6/8] WavLM
     # ------------------------------------------------------------------
-    print("\n--- [6/7] Extração: WavLM ---")
+    print("\n--- [6/8] Extração: WavLM ---")
     report.begin_step("wavlm")
     try:
         extract_wavlm_embeddings(filelist, input_dir, output_wavlm, "wavlm-base-plus", layer=-1, pool=False)
@@ -235,9 +259,9 @@ def main():
         print(f"ERRO FATAL em WavLM: {e}")
 
     # ------------------------------------------------------------------
-    # [7/7] wav2vec 2.0
+    # [7/8] wav2vec 2.0
     # ------------------------------------------------------------------
-    print("\n--- [7/7] Extração: wav2vec 2.0 ---")
+    print("\n--- [7/8] Extração: wav2vec 2.0 ---")
     report.begin_step("wav2vec2")
     try:
         extract_wav2vec2_embeddings(filelist, input_dir, output_wav2vec2, "wav2vec2-base", layer=-1, pool=False)
@@ -250,7 +274,7 @@ def main():
     # ------------------------------------------------------------------
     # Atualizar CSV
     # ------------------------------------------------------------------
-    print("\n--- Atualizando CSV com caminhos dos embeddings ---")
+    print("\n--- Atualizando CSV com caminhos dos embeddings e transcrição ---")
 
     def get_emb_path(audio_path, out_dir, input_dir):
         rel_p    = os.path.relpath(audio_path, input_dir)

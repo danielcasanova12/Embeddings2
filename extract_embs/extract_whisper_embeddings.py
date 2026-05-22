@@ -20,6 +20,7 @@ MODEL_PATHS = {
     "whisper-base":      ("openai/whisper-base",       74),
     "whisper-small":     ("openai/whisper-small",     244),
     "whisper-medium":    ("openai/whisper-medium",    769),
+    "whisper-medium.en": ("openai/whisper-medium.en", 769),
     "whisper-large":     ("openai/whisper-large",    1550),
     "whisper-large-v2":  ("openai/whisper-large-v2", 1550),
     "whisper-large-v3":  ("openai/whisper-large-v3", 1550),
