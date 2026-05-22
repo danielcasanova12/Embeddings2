@@ -300,28 +300,19 @@ def main():
                         suffix         = args.suffix
                     )
     else:
-        # Modo manual
-        if not args.base_dir or not args.input_dir_name:
-            print("Erro: Forneça --base-dir e --input-dir-name ou use --dataset-config / --all-datasets")
+        # Modo manual (Compatibilidade com extract.sh)
+        if not args.base_dir or not args.input_dir_name or not args.csv_path:
+            print("Erro: Forneça --base-dir, --input-dir-name e --csv-path ou use --dataset-config / --all-datasets")
             return
             
-        csv_path = args.csv_path
-        if not csv_path:
-            input_dir = join(args.base_dir, args.input_dir_name)
-            print(f"Buscando arquivos .wav em: {input_dir}")
-            filelist = glob.glob(join(input_dir, "**", "*.wav"), recursive=True)
-            df = pd.DataFrame({args.column_name: filelist})
-            csv_path = join(args.base_dir, "temp_filelist.csv")
-            df.to_csv(csv_path, index=False)
-
         run_extraction_on_csv(
-            csv_path       = csv_path,
+            csv_path       = args.csv_path,
             base_dir       = args.base_dir,
             input_dir_name = args.input_dir_name,
             output_base    = args.output_base,
             column_name    = args.column_name,
             asr_model      = args.asr_model,
-            report_dir     = args.report_dir,
+            report_dir     = join(args.report_dir, os.path.basename(args.csv_path).replace(".csv", "")),
             suffix         = args.suffix
         )
 
