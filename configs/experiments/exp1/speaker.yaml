@@ -1,0 +1,7 @@
+# configs/experiments/exp1/speaker.yaml
+experiment_name: "exp1_speaker"
+model_type: "single"
+embeddings:
+  - name: "speaker"
+    column: "speaker_path"
+    dim: 192

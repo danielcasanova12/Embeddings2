@@ -77,7 +77,6 @@ def run_experiment(cfg: dict) -> tuple[list[dict], dict]:
         "n_embeddings":      len(cfg.get("embeddings", [])),
         "embeddings":        "+".join(e["name"] for e in cfg.get("embeddings", [])),
         "best_val_spearman": float(checkpoint_cb.best_model_score or 0),
-        "test_mse":          test_metrics.get("test/loss",     None),
         "test_pearson":      test_metrics.get("test/pearson",  None),
         "test_spearman":     test_metrics.get("test/spearman", None),
         "adapter_dim":       cfg["adapter"]["adapter_dim"],
@@ -87,6 +86,48 @@ def run_experiment(cfg: dict) -> tuple[list[dict], dict]:
         "batch_size":        cfg["train"]["batch_size"],
         "epochs_trained":    trainer.current_epoch,
     }
+
+    # --- Extração de Detalhes Adicionais para o PDF ---
+    if cfg["model_type"] == "weighted_fusion":
+        # Extrai pesos médios do loader de teste
+        model.eval()
+        all_w = []
+        with torch.no_grad():
+            for batch in test_loader:
+                embs, mos, masks, _ = batch
+                embs = [e.to(model.device) for e in embs]
+                masks = [m.to(model.device) if m is not None else None for m in masks]
+                out = model(embs, masks)
+                if "weights" in out:
+                    all_w.append(out["weights"].cpu())
+        if all_w:
+            avg_w = torch.cat(all_w).mean(dim=0).tolist()
+            weights_dict = {cfg["embeddings"][i]["name"]: avg_w[i] for i in range(len(avg_w))}
+            eval_row["weights"] = weights_dict
+            eval_row["Detalhes Extra"] = "Pesos extraídos"
+
+    elif cfg["model_type"] == "mutual_info_reg":
+        # Extrai CKA médio do loader de teste
+        model.eval()
+        all_cka = []
+        from src.models.blocks import linear_cka
+        with torch.no_grad():
+            for batch in test_loader:
+                embs, mos, masks, _ = batch
+                embs = [e.to(model.device) for e in embs]
+                masks = [m.to(model.device) if m is not None else None for m in masks]
+                out = model(embs, masks)
+                if "latents" in out and len(out["latents"]) >= 2:
+                    latents = out["latents"]
+                    c_val = 0; c_count = 0
+                    for i in range(len(latents)):
+                        for j in range(i+1, len(latents)):
+                            c_val += linear_cka(latents[i], latents[j]).item()
+                            c_count += 1
+                    all_cka.append(c_val / c_count)
+        if all_cka:
+            avg_cka = sum(all_cka) / len(all_cka)
+            eval_row["Detalhes Extra"] = f"Avg CKA: {avg_cka:.4f}"
 
     if logger:
         import wandb; wandb.finish()

@@ -1,0 +1,12 @@
+model_type: "single"
+experiment: "exp1_wav2vec2"
+embeddings:
+  - {name: "wav2vec2", dim: 768}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

@@ -1,16 +1,12 @@
 # src/models/architectures.py
 """
-Implementação das 5 arquiteturas de predição de MOS.
-
-Todas recebem como forward():
-    embs: List[Tensor[B, D_i]]  — um tensor por embedding
-    retornam: dict com pelo menos {"mos": Tensor[B]}
+Implementação das 8 arquiteturas de predição de MOS.
 """
 
 import torch
 import torch.nn as nn
 from typing import List, Optional
-from .blocks import MLP, Adapter, build_adapters, get_pooling_layer
+from .blocks import MLP, Adapter, build_adapters, get_pooling_layer, linear_cka, GRL
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -35,6 +31,11 @@ class MultiEmbeddingBase(nn.Module):
                 pooled.append(e)
         return pooled
 
+    def extract_latent(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> torch.Tensor:
+        """Default fallback: concatenation of pooled embeddings."""
+        pooled = self._pool_embs(embs, masks)
+        return torch.cat(pooled, dim=-1)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Single Embedding
@@ -47,7 +48,6 @@ class SingleEmbeddingMOS(MultiEmbeddingBase):
         adp_cfg = cfg["adapter"]
         mlp_cfg = cfg["mlp"]
         
-        # Ajuste de dimensão se pooling for Stats ou ASP (dobra a dimensão)
         in_dim = emb_cfg["dim"]
         if self.pooling_mode.lower() in ["stats", "asp"]:
             in_dim *= 2
@@ -66,11 +66,11 @@ class SingleEmbeddingMOS(MultiEmbeddingBase):
             dropout    = mlp_cfg["dropout"],
             activation = mlp_cfg["activation"],
             input_norm = mlp_cfg.get("input_norm", True),
+            sigmoid_scale = cfg.get("sigmoid_scale", False),
         )
 
     def forward(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> dict:
-        pooled = self._pool_embs(embs, masks)
-        x = self.adapter(pooled[0])
+        x = self.extract_latent(embs, masks)
         return {"mos": self.mlp(x)}
 
     def extract_latent(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> torch.Tensor:
@@ -79,7 +79,7 @@ class SingleEmbeddingMOS(MultiEmbeddingBase):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. Cross-Embedding Interaction
+# 2. Cross-Embedding Interaction (Exp 3)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class CrossEmbeddingInteraction(MultiEmbeddingBase):
@@ -90,7 +90,6 @@ class CrossEmbeddingInteraction(MultiEmbeddingBase):
         mlp_cfg  = cfg["mlp"]
         D        = adp_cfg["adapter_dim"]
         
-        # Atualiza dims dos adapters baseado no pooling
         modified_emb_cfgs = []
         for e in emb_cfgs:
             d = e["dim"]
@@ -99,16 +98,12 @@ class CrossEmbeddingInteraction(MultiEmbeddingBase):
             modified_emb_cfgs.append({"dim": d, "name": e["name"]})
 
         self.adapters = build_adapters(modified_emb_cfgs, adp_cfg)
-        
-        # Exp 3 pede interação Hadamard. 
-        # Se mode for 'simple_interaction', usa apenas o cross-product.
-        # Caso contrário, concatena originais + cross-product.
         self.interaction_mode = cfg.get("interaction_mode", "full")
         N = len(emb_cfgs)
         n_pairs = N * (N - 1) // 2
         
         if self.interaction_mode == "hadamard_only":
-            input_dim = D # assume N=2 para o Experimento 3
+            input_dim = D 
         else:
             input_dim = D * N + D * n_pairs
 
@@ -120,6 +115,7 @@ class CrossEmbeddingInteraction(MultiEmbeddingBase):
             dropout    = mlp_cfg["dropout"],
             activation = mlp_cfg["activation"],
             input_norm = mlp_cfg.get("input_norm", True),
+            sigmoid_scale = cfg.get("sigmoid_scale", False),
         )
 
     def forward(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> dict:
@@ -143,7 +139,7 @@ class CrossEmbeddingInteraction(MultiEmbeddingBase):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Multi-Embedding Concat Fusion
+# 3. Multi-Embedding Concat Fusion (Exp 2)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ConcatFusionMOS(MultiEmbeddingBase):
@@ -170,6 +166,7 @@ class ConcatFusionMOS(MultiEmbeddingBase):
             dropout    = mlp_cfg["dropout"],
             activation = mlp_cfg["activation"],
             input_norm = mlp_cfg.get("input_norm", True),
+            sigmoid_scale = cfg.get("sigmoid_scale", False),
         )
 
     def forward(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> dict:
@@ -183,45 +180,12 @@ class ConcatFusionMOS(MultiEmbeddingBase):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Linear Probing (Exp 5)
+# 4. Reliability Fusion + Perceptual Factors (Exp 4 in prompt.md)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class LinearProbeMOS(MultiEmbeddingBase):
-    """
-    Linear Probe: Embedding (pooled) -> Linear Layer -> Output
-    """
+class ReliabilityFusionMOS(MultiEmbeddingBase):
     def __init__(self, cfg: dict):
         super().__init__(cfg)
-        emb_cfg = cfg["embeddings"][0] # Probing é single-embedding no Exp 5
-        
-        in_dim = emb_cfg["dim"]
-        if self.pooling_mode.lower() in ["stats", "asp"]:
-            in_dim *= 2
-            
-        self.linear = nn.Linear(in_dim, cfg.get("output_dim", 1))
-
-    def forward(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> dict:
-        pooled = self._pool_embs(embs, masks)
-        return {"mos": self.linear(pooled[0])}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. Reliability Fusion + Perceptual Factor Modeling
-# ─────────────────────────────────────────────────────────────────────────────
-
-class ReliabilityFusionMOS(nn.Module):
-    """
-    Embeddings → Adapters
-        → Reliability estimation  (w_i = sigmoid(Linear(emb_i)))
-        → Weighted sum
-        → Factor heads            (predições auxiliares por fator perceptual)
-        → MOS head
-    
-    A loss durante treino combina:
-        L_total = L_mos + factor_weight * mean(L_factor_i)
-    """
-    def __init__(self, cfg: dict):
-        super().__init__()
         emb_cfgs     = cfg["embeddings"]
         adp_cfg      = cfg["adapter"]
         mlp_cfg      = cfg["mlp"]
@@ -231,67 +195,50 @@ class ReliabilityFusionMOS(nn.Module):
 
         self.adapters = build_adapters(emb_cfgs, adp_cfg)
 
-        # Reliability: escalar por embedding, estimado do próprio embedding
         self.reliability_heads = nn.ModuleList([
             nn.Sequential(nn.Linear(D, 1), nn.Sigmoid())
             for _ in emb_cfgs
         ])
 
-        # MOS head
         self.mos_mlp = MLP(
             input_dim  = D,
             hidden_dim = mlp_cfg["hidden_dim"],
             num_layers = mlp_cfg["num_layers"],
-            output_dim = cfg["output_dim"],
+            output_dim = cfg.get("output_dim", 1),
             dropout    = mlp_cfg["dropout"],
             activation = mlp_cfg["activation"],
             input_norm = mlp_cfg.get("input_norm", True),
+            sigmoid_scale = cfg.get("sigmoid_scale", False),
         )
 
-        # Factor heads (um por fator perceptual, predição auxiliar)
         self.factor_names = factor_names
         self.factor_heads = nn.ModuleList([
             nn.Linear(D, 1) for _ in factor_names
         ])
 
-    def forward(self, embs: List[torch.Tensor]) -> dict:
-        adapted = [adp(e) for adp, e in zip(self.adapters, embs)]  # [B, D] cada
+    def forward(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> dict:
+        pooled = self._pool_embs(embs, masks)
+        adapted = [adp(e) for adp, e in zip(self.adapters, pooled)]
 
-        # Reliability weights: [B, N] → softmax para somar 1
-        weights = torch.cat(
-            [rh(a) for rh, a in zip(self.reliability_heads, adapted)],
-            dim=-1
-        )  # [B, N]
+        weights = torch.cat([rh(a) for rh, a in zip(self.reliability_heads, adapted)], dim=-1)
         weights = torch.softmax(weights, dim=-1)
 
-        # Média ponderada: [B, D]
-        stacked = torch.stack(adapted, dim=1)          # [B, N, D]
-        fused   = (stacked * weights.unsqueeze(-1)).sum(dim=1)  # [B, D]
+        stacked = torch.stack(adapted, dim=1)
+        fused   = (stacked * weights.unsqueeze(-1)).sum(dim=1)
 
         mos = self.mos_mlp(fused)
-
-        # Factor scores (usados na loss auxiliar durante treino)
-        factor_scores = {
-            name: self.factor_heads[i](fused).squeeze(-1)
-            for i, name in enumerate(self.factor_names)
-        }
+        factor_scores = {name: self.factor_heads[i](fused).squeeze(-1) for i, name in enumerate(self.factor_names)}
 
         return {"mos": mos, "factors": factor_scores, "weights": weights}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. Transformer Fusion
+# 5. Transformer Fusion (Exp 5 in prompt.md)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TransformerFusionMOS(nn.Module):
-    """
-    Embeddings → Adapters → [CLS, e1, e2, ... eN] → Transformer Encoder → CLS → MLP → MOS
-    
-    O token CLS é aprendido e serve como representação global.
-    O Transformer aprende a cruzar informação entre embeddings heterogêneos.
-    """
+class TransformerFusionMOS(MultiEmbeddingBase):
     def __init__(self, cfg: dict):
-        super().__init__()
+        super().__init__(cfg)
         emb_cfgs = cfg["embeddings"]
         adp_cfg  = cfg["adapter"]
         mlp_cfg  = cfg["mlp"]
@@ -300,53 +247,135 @@ class TransformerFusionMOS(nn.Module):
         N        = len(emb_cfgs)
 
         self.adapters = build_adapters(emb_cfgs, adp_cfg)
-
-        # Token CLS aprendível
         self.cls_token = nn.Parameter(torch.randn(1, 1, D))
-
-        # Positional embedding por posição (0=CLS, 1..N=embeddings)
         self.pos_emb = nn.Embedding(N + 1, D)
 
-        # Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model         = D,
-            nhead           = tr_cfg.get("num_heads", 4),
-            dim_feedforward = tr_cfg.get("feedforward_dim", 512),
-            dropout         = tr_cfg.get("dropout", 0.1),
-            batch_first     = True,
-            norm_first      = True,          # pre-norm (mais estável)
+            d_model=D, nhead=tr_cfg.get("num_heads", 4), dim_feedforward=tr_cfg.get("feedforward_dim", 512),
+            dropout=tr_cfg.get("dropout", 0.1), batch_first=True, norm_first=True
         )
-        self.transformer = nn.TransformerEncoder(
-            encoder_layer,
-            num_layers = tr_cfg.get("num_layers", 2),
-        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=tr_cfg.get("num_layers", 2))
 
-        # MLP final sobre o CLS
         self.mlp = MLP(
             input_dim  = D,
             hidden_dim = mlp_cfg["hidden_dim"],
             num_layers = mlp_cfg["num_layers"],
-            output_dim = cfg["output_dim"],
+            output_dim = cfg.get("output_dim", 1),
             dropout    = mlp_cfg["dropout"],
             activation = mlp_cfg["activation"],
             input_norm = mlp_cfg.get("input_norm", True),
+            sigmoid_scale = cfg.get("sigmoid_scale", False),
         )
 
-    def forward(self, embs: List[torch.Tensor]) -> dict:
-        B = embs[0].shape[0]
-        adapted = [adp(e) for adp, e in zip(self.adapters, embs)]  # cada [B, D]
-
-        # Sequência: [CLS, emb_0, emb_1, ..., emb_N-1]
-        tokens = torch.stack(adapted, dim=1)                        # [B, N, D]
-        cls    = self.cls_token.expand(B, -1, -1)                   # [B, 1, D]
-        seq    = torch.cat([cls, tokens], dim=1)                    # [B, N+1, D]
-
-        # Positional embeddings
+    def forward(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> dict:
+        pooled = self._pool_embs(embs, masks)
+        B = pooled[0].shape[0]
+        adapted = [adp(e) for adp, e in zip(self.adapters, pooled)]
+        tokens = torch.stack(adapted, dim=1)
+        cls = self.cls_token.expand(B, -1, -1)
+        seq = torch.cat([cls, tokens], dim=1)
         pos = torch.arange(seq.shape[1], device=seq.device)
         seq = seq + self.pos_emb(pos).unsqueeze(0)
-
-        # Transformer
-        out = self.transformer(seq)                                 # [B, N+1, D]
-        cls_out = out[:, 0, :]                                      # [B, D]
-
+        out = self.transformer(seq)
+        cls_out = out[:, 0, :]
         return {"mos": self.mlp(cls_out)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Weighted Sum Fusion (Exp 9 - prompt2.md)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class WeightedSumFusionMOS(MultiEmbeddingBase):
+    def __init__(self, cfg: dict):
+        super().__init__(cfg)
+        emb_cfgs = cfg["embeddings"]
+        adp_cfg  = cfg["adapter"]
+        mlp_cfg  = cfg["mlp"]
+        D        = adp_cfg["adapter_dim"]
+
+        self.adapters = build_adapters(emb_cfgs, adp_cfg)
+        self.weight_mlp = MLP(
+            input_dim=D * len(emb_cfgs), hidden_dim=128, num_layers=1, output_dim=len(emb_cfgs),
+            dropout=0.1, input_norm=True
+        )
+        self.mlp = MLP(
+            input_dim  = D,
+            hidden_dim = mlp_cfg["hidden_dim"],
+            num_layers = mlp_cfg["num_layers"],
+            output_dim = cfg.get("output_dim", 1),
+            dropout    = mlp_cfg["dropout"],
+            activation = mlp_cfg["activation"],
+            input_norm = mlp_cfg.get("input_norm", True),
+            sigmoid_scale = cfg.get("sigmoid_scale", False),
+        )
+
+    def forward(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> dict:
+        pooled = self._pool_embs(embs, masks)
+        adapted = [adp(e) for adp, e in zip(self.adapters, pooled)]
+        z_concat = torch.cat(adapted, dim=-1)
+        weights = torch.softmax(self.weight_mlp(z_concat), dim=-1)
+        stacked = torch.stack(adapted, dim=1)
+        f_weighted = (stacked * weights.unsqueeze(-1)).sum(dim=1)
+        return {"mos": self.mlp(f_weighted), "weights": weights}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Mutual Info Regularized Fusion (Exp 10 - prompt2.md)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RegularizedMutualInfoMOS(MultiEmbeddingBase):
+    def __init__(self, cfg: dict):
+        super().__init__(cfg)
+        emb_cfgs = cfg["embeddings"]
+        adp_cfg  = cfg["adapter"]
+        mlp_cfg  = cfg["mlp"]
+        D        = adp_cfg["adapter_dim"]
+
+        self.adapters = build_adapters(emb_cfgs, adp_cfg)
+        self.mlp = MLP(
+            input_dim  = D * len(emb_cfgs),
+            hidden_dim = mlp_cfg["hidden_dim"],
+            num_layers = mlp_cfg["num_layers"],
+            output_dim = cfg.get("output_dim", 1),
+            dropout    = mlp_cfg["dropout"],
+            activation = mlp_cfg["activation"],
+            input_norm = mlp_cfg.get("input_norm", True),
+            sigmoid_scale = cfg.get("sigmoid_scale", False),
+        )
+        self.use_grl = cfg.get("use_grl", False)
+        if self.use_grl:
+            self.grl = GRL(alpha=cfg.get("grl_lambda", 1.0))
+            # Adversarial Predictor: tries to predict reference (emb[0]) from others
+            self.adv_predictor = nn.Linear(D, D)
+
+    def forward(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> dict:
+        pooled = self._pool_embs(embs, masks)
+        adapted = [adp(e) for adp, e in zip(self.adapters, pooled)]
+        z_concat = torch.cat(adapted, dim=-1)
+        out = {"mos": self.mlp(z_concat), "latents": adapted}
+        if self.use_grl and len(adapted) >= 2:
+            # Variant B: adversarial redundancy removal
+            # Predict reference (adapted[0]) from second embedding (adapted[1])
+            z_ref, z_other = adapted[0], adapted[1]
+            pred = self.adv_predictor(self.grl(z_other))
+            out["adv_pred"] = pred
+            out["adv_target"] = z_ref
+        return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Linear Probing (Exp 5 in protocol)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class LinearProbeMOS(MultiEmbeddingBase):
+    def __init__(self, cfg: dict):
+        super().__init__(cfg)
+        emb_cfg = cfg["embeddings"][0]
+        in_dim = emb_cfg["dim"]
+        if self.pooling_mode.lower() in ["stats", "asp"]:
+            in_dim *= 2
+        self.linear = nn.Linear(in_dim, cfg.get("output_dim", 1))
+
+    def forward(self, embs: List[torch.Tensor], masks: List[Optional[torch.Tensor]]) -> dict:
+        pooled = self._pool_embs(embs, masks)
+        return {"mos": self.linear(pooled[0])}

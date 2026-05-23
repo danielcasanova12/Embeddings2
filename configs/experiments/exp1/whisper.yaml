@@ -1,0 +1,7 @@
+# configs/experiments/exp1/whisper.yaml
+experiment_name: "exp1_whisper"
+model_type: "single"
+embeddings:
+  - name: "whisper"
+    column: "whisper_path"
+    dim: 1280

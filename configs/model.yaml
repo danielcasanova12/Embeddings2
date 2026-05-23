@@ -64,7 +64,7 @@ early_stopping:
 
 # Logging configuration (Optional)
 wandb:
-  enabled: false
+  enabled: true
   project: "mos-embeddings"
   entity: null
 

@@ -1,0 +1,11 @@
+# configs/experiments/exp3/inter_ws.yaml
+experiment_name: "exp3_inter_ws"
+model_type: "cross_interaction"
+interaction_mode: "hadamard_only"
+embeddings:
+  - name: "whisper"
+    column: "whisper_path"
+    dim: 1280
+  - name: "speaker"
+    column: "speaker_path"
+    dim: 192

@@ -1,0 +1,7 @@
+# configs/experiments/exp1/hubert.yaml
+experiment_name: "exp1_hubert"
+model_type: "single"
+embeddings:
+  - name: "hubert"
+    column: "hubert_path"
+    dim: 768

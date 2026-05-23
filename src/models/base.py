@@ -1,7 +1,7 @@
 # src/models/base.py
 """
-Lightning Module que envolve qualquer uma das 5 arquiteturas.
-Gerencia treino, validação, teste, métricas e loss auxiliar de fatores.
+Lightning Module que envolve qualquer uma das 8 arquiteturas.
+Gerencia treino, validação, teste, métricas e losses auxiliares (Fatores, CKA, GRL).
 """
 
 import math
@@ -16,6 +16,8 @@ from .architectures import (
     ConcatFusionMOS,
     ReliabilityFusionMOS,
     TransformerFusionMOS,
+    WeightedSumFusionMOS,
+    RegularizedMutualInfoMOS,
     LinearProbeMOS,
 )
 
@@ -25,6 +27,8 @@ ARCH_MAP = {
     "concat_fusion":      ConcatFusionMOS,
     "reliability_fusion": ReliabilityFusionMOS,
     "transformer_fusion": TransformerFusionMOS,
+    "weighted_fusion":    WeightedSumFusionMOS,
+    "mutual_info_reg":    RegularizedMutualInfoMOS,
     "probing":            LinearProbeMOS,
 }
 
@@ -42,9 +46,11 @@ class MOSPredictor(pl.LightningModule):
         self.model = ARCH_MAP[model_type](cfg)
         self.mse   = nn.MSELoss()
 
-        # Peso da loss auxiliar de fatores (usado apenas em reliability_fusion)
+        # Configs de Loss
         rel_cfg = cfg.get("reliability", {})
         self.factor_weight = rel_cfg.get("factor_weight", 0.0)
+        self.cka_lambda    = cfg.get("cka_lambda", 0.0)
+        self.grl_lambda    = cfg.get("grl_lambda_loss", 0.0)
 
         self._val_p,  self._val_t  = [], []
         self._test_p, self._test_t = [], []
@@ -57,16 +63,39 @@ class MOSPredictor(pl.LightningModule):
     # ── loss ─────────────────────────────────────────────────────
 
     def _compute_loss(self, out: dict, target: torch.Tensor) -> torch.Tensor:
-        # out["mos"] é a saída principal independente da task
+        # 1. Main MOS Loss
         loss = self.mse(out["mos"], target)
 
-        # Loss auxiliar de fatores (se architecture retornar "factors")
+        # 2. Auxiliary Factor Loss (Reliability Fusion)
         if self.factor_weight > 0 and "factors" in out:
             factor_loss = torch.stack([
-                self.mse(score, target) # Assume MSE para fatores
+                self.mse(score, target)
                 for score in out["factors"].values()
             ]).mean()
             loss = loss + self.factor_weight * factor_loss
+
+        # 3. CKA Regularization (Exp 10A)
+        # prompt2: L_total = L_MOS - λ · Σ CKA(z_i, z_j) (minimizar redundância global)
+        if self.cka_lambda != 0 and "latents" in out and len(out["latents"]) >= 2:
+            from .blocks import linear_cka
+            latents = out["latents"]
+            cka_total = 0
+            count = 0
+            for i in range(len(latents)):
+                for j in range(i + 1, len(latents)):
+                    cka_total = cka_total + linear_cka(latents[i], latents[j])
+                    count += 1
+            
+            avg_cka = cka_total / count
+            loss = loss - self.cka_lambda * avg_cka
+            self.log("train/avg_cka", avg_cka, on_step=True, on_epoch=True)
+
+        # 4. Adversarial Loss (Exp 10B)
+        # prompt2: L_total = L_MOS - λ · L_adv
+        if self.grl_lambda != 0 and "adv_pred" in out:
+            adv_loss = self.mse(out["adv_pred"], out["adv_target"])
+            loss = loss - self.grl_lambda * adv_loss
+            self.log("train/adv_loss", adv_loss, on_step=True, on_epoch=True)
 
         return loss
 
@@ -74,7 +103,8 @@ class MOSPredictor(pl.LightningModule):
 
     def _get_target(self, mos, extras_list):
         if self.cfg.get("task") == "probing":
-            target_col = self.cfg.get("probing", {}).get("target_column")
+            target_col = self.cfg.get("probing", {}).get("target_column", "mos")
+            if target_col == "mos": return mos
             # Extrai do extras_list
             targets = [e[target_col] for e in extras_list]
             return torch.tensor(targets, device=self.device).float()
@@ -86,6 +116,14 @@ class MOSPredictor(pl.LightningModule):
         out  = self(embs, masks)
         loss = self._compute_loss(out, target)
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        
+        # Log dynamic weights for WeightedSumFusion
+        if "weights" in out:
+            avg_weights = out["weights"].mean(dim=0)
+            for i, w in enumerate(avg_weights):
+                name = self.cfg["embeddings"][i]["name"]
+                self.log(f"weights/{name}", w, on_epoch=True)
+                
         return loss
 
     def validation_step(self, batch, _):
@@ -115,6 +153,7 @@ class MOSPredictor(pl.LightningModule):
         self._test_p.clear(); self._test_t.clear()
 
     def _flush(self, preds_list, targets_list, prefix):
+        if not preds_list: return
         preds   = torch.cat(preds_list).numpy()
         targets = torch.cat(targets_list).numpy()
         mse      = float(((preds - targets) ** 2).mean())

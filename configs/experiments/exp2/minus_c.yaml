@@ -1,0 +1,13 @@
+# configs/experiments/exp2/minus_c.yaml
+experiment_name: "exp2_minus_c"
+model_type: "concat_fusion"
+embeddings:
+  - name: "whisper"
+    column: "whisper_path"
+    dim: 1280
+  - name: "speaker"
+    column: "speaker_path"
+    dim: 192
+  - name: "f0"
+    column: "f0_path"
+    dim: 1

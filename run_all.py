@@ -39,15 +39,22 @@ def gerar_relatorio_pdf(resultados_gerais, resultados_analise, caminho_saida):
     elementos.append(Paragraph("Relatório Consolidado de Experimentos MOS", estilos['Title']))
     elementos.append(Spacer(1, 12))
 
-    # --- Seção 1: Experimentos de Treino (1, 2, 3, 8) ---
-    elementos.append(Paragraph("1. Experimentos de Treino (Baseline, Fusion, Interaction, Pooling)", estilos['Heading2']))
+    # --- Seção 1: Experimentos de Treino ---
+    elementos.append(Paragraph("1. Experimentos de Treino (Protocolo Completo 1-10)", estilos['Heading2']))
     if resultados_gerais:
-        cabecalhos = list(resultados_gerais[0].keys())
+        cabecalhos = ["ID", "Tipo", "Embeddings", "Pearson", "Spearman", "Detalhes Extra"]
         dados_tabela = [[Paragraph(f"<b>{c}</b>", estilos['Normal']) for c in cabecalhos]]
         for linha in resultados_gerais:
-            dados_tabela.append([Paragraph(str(linha.get(c, "")), estilos['Normal']) for c in cabecalhos])
+            dados_tabela.append([
+                Paragraph(str(linha.get("ID", "")), estilos['Normal']),
+                Paragraph(str(linha.get("Tipo", "")), estilos['Normal']),
+                Paragraph(str(linha.get("Embeddings", "")), estilos['Normal']),
+                Paragraph(str(linha.get("Pearson", "")), estilos['Normal']),
+                Paragraph(str(linha.get("Spearman", "")), estilos['Normal']),
+                Paragraph(str(linha.get("Detalhes Extra", "-")), estilos['Normal']),
+            ])
 
-        t = Table(dados_tabela)
+        t = Table(dados_tabela, colWidths=[80, 100, 200, 60, 60, 200])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
@@ -57,7 +64,21 @@ def gerar_relatorio_pdf(resultados_gerais, resultados_analise, caminho_saida):
 
     elementos.append(Spacer(1, 24))
 
-    # --- Seção 2: Experimentos de Análise (4, 5, 6, 7) ---
+    # --- Seção 2: Detalhamento de Pesos (Exp 9) ---
+    pesos_exp = [r for r in resultados_gerais if r.get("Tipo") == "weighted_fusion"]
+    if pesos_exp:
+        elementos.append(Paragraph("1.1 Detalhamento de Pesos Dinâmicos (Exp 9)", estilos['Heading3']))
+        for p in pesos_exp:
+            if "weights" in p:
+                elementos.append(Paragraph(f"Experimento: {p['ID']}", estilos['Normal']))
+                w_data = [["Embedding", "Peso Médio"]] + [[k, f"{v:.4f}"] for k, v in p["weights"].items()]
+                tw = Table(w_data)
+                tw.setStyle(TableStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey)]))
+                elementos.append(tw)
+                elementos.append(Spacer(1, 12))
+
+    # --- Seção 3: Experimentos de Análise (4, 5, 6, 7) ---
+
     elementos.append(Paragraph("2. Experimentos de Análise e Robustez", estilos['Heading2']))
     for analise in resultados_analise:
         elementos.append(Paragraph(f"<b>{analise['titulo']}</b>", estilos['Heading3']))
@@ -101,7 +122,7 @@ def main():
     pattern = "configs/experiments/{exp1,exp2,exp3,exp8}/**/*.yaml"
     import glob
     # Nota: Windows glob pode não suportar {} nativamente, vamos fazer manual
-    exp_dirs = ["exp1", "exp2", "exp3", "exp8"]
+    exp_dirs = ["exp1", "exp2", "exp3", "exp8", "exp9", "exp10"]
     experiment_files = []
     for ed in exp_dirs:
         experiment_files.extend(glob.glob(f"configs/experiments/{ed}/**/*.yaml", recursive=True))
@@ -128,6 +149,8 @@ def main():
 
     # --- FASE 2: Experimento 4 (Zero-Shot) ---
     print("\n--- [Exp 4] Zero-Shot Evaluation ---")
+    # ... rest of steps ...
+
     # Assume que temos os checkpoints dos experimentos FULL e minus_c do exp2
     # Procurar o melhor checkpoint (simplificado)
     ckpt_full = glob.glob("checkpoints/exp2_full/**/*.ckpt", recursive=True)

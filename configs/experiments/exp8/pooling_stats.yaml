@@ -1,0 +1,21 @@
+# configs/experiments/exp8/pooling_stats_full.yaml
+experiment: "exp8_pooling_stats_full"
+model_type: "concat_fusion"
+model:
+  pooling: "stats"
+embeddings:
+  - {name: "whisper", dim: 768}
+  - {name: "speaker", dim: 192}
+  - {name: "contentvec", dim: 768}
+  - {name: "hubert", dim: 768}
+  - {name: "wavlm", dim: 768}
+  - {name: "wav2vec2", dim: 768}
+  - {name: "f0", dim: 1}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

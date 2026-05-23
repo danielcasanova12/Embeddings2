@@ -1,0 +1,7 @@
+# configs/experiments/exp1/contentvec.yaml
+experiment_name: "exp1_contentvec"
+model_type: "single"
+embeddings:
+  - name: "contentvec"
+    column: "contentvec_path"
+    dim: 768

@@ -1,0 +1,7 @@
+# configs/experiments/exp1/wavlm.yaml
+experiment_name: "exp1_wavlm"
+model_type: "single"
+embeddings:
+  - name: "wavlm"
+    column: "wavlm_path"
+    dim: 768

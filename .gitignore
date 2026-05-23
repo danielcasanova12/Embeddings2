@@ -22,5 +22,4 @@
 *.R
 /datasets/
 *.ckpt
-*.yaml
 *.md
