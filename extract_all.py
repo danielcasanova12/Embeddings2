@@ -129,30 +129,59 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
     # [0/8] ASR Transcription
     print(f"\n--- [0/8] Transcrição ASR: Whisper ({asr_model}) ---")
     report.begin_step("transcription")
-    transcripts = []
-    try:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = whisper.load_model(asr_model, device=device)
-        from tqdm import tqdm
-        for filepath in tqdm(filelist, desc="Transcrevendo"):
-            res = model.transcribe(filepath, fp16=(device=="cuda"))
-            transcripts.append(res["text"].strip().lower())
-        df["transcript"] = transcripts
+    
+    # Se a coluna transcript já existe e não está vazia, podemos pular ou perguntar
+    # Para automação, vamos pular se todos estiverem preenchidos
+    if "transcript" in df.columns and df["transcript"].notna().all():
+        print("Coluna 'transcript' já preenchida. Pulando transcrição.")
         report.ok_step("transcription")
-    except Exception as e:
-        report.fail_step("transcription", e)
-        print(f"ERRO FATAL em Transcrição: {e}")
-        if "transcript" not in df.columns: df["transcript"] = [""] * len(filelist)
+    else:
+        transcripts = []
+        try:
+            # Recomendação: Usar CPU para ASR para economizar VRAM para os modelos de embeddings
+            device_asr = "cpu" 
+            print(f"Carregando Whisper ({asr_model}) em {device_asr.upper()} para transcrição...")
+            model = whisper.load_model(asr_model, device=device_asr)
+            from tqdm import tqdm
+            for filepath in tqdm(filelist, desc="Transcrevendo"):
+                # Se já temos o transcript para este arquivo, podemos pular
+                # (Simplificado: processamos tudo se a coluna estiver incompleta)
+                res = model.transcribe(filepath, fp16=False)
+                transcripts.append(res["text"].strip().lower())
+            df["transcript"] = transcripts
+            report.ok_step("transcription")
+            
+            # Liberar memória do modelo de transcrição
+            del model
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        except Exception as e:
+            report.fail_step("transcription", e)
+            print(f"ERRO FATAL em Transcrição: {e}")
+            if "transcript" not in df.columns: df["transcript"] = [""] * len(filelist)
+
+    def clear_vram():
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     # [1/8] Whisper Embeddings
     print("\n--- [1/8] Extração: Whisper Embeddings ---")
     report.begin_step("whisper")
     try:
-        extract_whisper_embeddings(filelist, input_dir, output_whisper, "whisper-medium.en")
+        # Usar modelo multilingual por recomendação
+        w_model = "whisper-medium" if asr_model == "medium" else asr_model
+        extract_whisper_embeddings(filelist, input_dir, output_whisper, w_model)
         verify_outputs(filelist, input_dir, output_whisper, report, "whisper")
         report.ok_step("whisper")
     except Exception as e:
         report.fail_step("whisper", e)
+    finally:
+        clear_vram()
 
     # [2/8] ContentVec
     print("\n--- [2/8] Extração: ContentVec ---")
@@ -163,6 +192,8 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
         report.ok_step("contentvec")
     except Exception as e:
         report.fail_step("contentvec", e)
+    finally:
+        clear_vram()
 
     # [3/8] Speaker ECAPA-TDNN
     print("\n--- [3/8] Extração: Speaker (ECAPA-TDNN) ---")
@@ -173,6 +204,8 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
         report.ok_step("speaker")
     except Exception as e:
         report.fail_step("speaker", e)
+    finally:
+        clear_vram()
 
     # [4/8] F0 CREPE
     print("\n--- [4/8] Extração: F0 (CREPE) ---")
@@ -184,6 +217,8 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
         report.ok_step("f0")
     except Exception as e:
         report.fail_step("f0", e)
+    finally:
+        clear_vram()
 
     # [5/8] HuBERT
     print("\n--- [5/8] Extração: HuBERT ---")
@@ -194,6 +229,8 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
         report.ok_step("hubert")
     except Exception as e:
         report.fail_step("hubert", e)
+    finally:
+        clear_vram()
 
     # [6/8] WavLM
     print("\n--- [6/8] Extração: WavLM ---")
@@ -204,6 +241,8 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
         report.ok_step("wavlm")
     except Exception as e:
         report.fail_step("wavlm", e)
+    finally:
+        clear_vram()
 
     # [7/8] wav2vec 2.0
     print("\n--- [7/8] Extração: wav2vec 2.0 ---")
@@ -214,6 +253,8 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
         report.ok_step("wav2vec2")
     except Exception as e:
         report.fail_step("wav2vec2", e)
+    finally:
+        clear_vram()
 
     # Atualizar CSV
     def get_emb_path(audio_path, out_dir, input_dir):

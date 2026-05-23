@@ -16,8 +16,8 @@ def main():
     parser.add_argument("-o", "--output_csv", help="Caminho para o CSV de saída")
     args = parser.parse_args()
 
-    print(f"Carregando modelo Whisper '{args.model}'...")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Carregando modelo Whisper '{args.model}' na CPU (recomendado para economizar VRAM)...")
+    device = "cpu"
     model = whisper.load_model(args.model, device=device)
 
     df = pd.read_csv(args.input_csv)

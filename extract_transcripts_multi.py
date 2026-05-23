@@ -9,12 +9,13 @@ from transformers import pipeline
 from os.path import join, exists
 
 def transcribe_whisper(model_name, audio_paths, device):
-    print(f"Carregando Whisper '{model_name}'...")
-    model = whisper.load_model(model_name, device=device)
+    # Forçamos CPU para Whisper ASR para economizar VRAM
+    print(f"Carregando Whisper '{model_name}' na CPU...")
+    model = whisper.load_model(model_name, device="cpu")
     results = []
     for path in tqdm(audio_paths, desc="Whisper ASR"):
         try:
-            res = model.transcribe(path, fp16=(device=="cuda"))
+            res = model.transcribe(path, fp16=False)
             results.append(res["text"].strip().lower())
         except Exception as e:
             print(f"Erro Whisper em {path}: {e}")
@@ -22,9 +23,10 @@ def transcribe_whisper(model_name, audio_paths, device):
     return results
 
 def transcribe_wav2vec2(model_id, audio_paths, device):
-    print(f"Carregando Wav2Vec2/XLSR '{model_id}'...")
-    # Usando pipeline do transformers para facilidade com XLSR
-    asr_pipe = pipeline("automatic-speech-recognition", model=model_id, device=0 if device=="cuda" else -1)
+    # Para Wav2Vec2/pipeline, se o device original for cuda, tentamos manter ou mover para cpu se houver OOM
+    # Aqui, para seguir a recomendação, vamos usar CPU (-1 no transformers pipeline)
+    print(f"Carregando Wav2Vec2/XLSR '{model_id}' na CPU...")
+    asr_pipe = pipeline("automatic-speech-recognition", model=model_id, device=-1)
     results = []
     for path in tqdm(audio_paths, desc="Wav2Vec2 ASR"):
         try:
