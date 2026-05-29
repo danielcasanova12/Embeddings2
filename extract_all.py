@@ -9,9 +9,7 @@ from typing import List, Dict
 from os.path import join, exists, relpath, splitext
 
 import pandas as pd
-from faster_whisper import WhisperModel
 import torch
-import whisper
 
 from extract_embs.extract_whisper_embeddings import extract_whisper_embeddings
 from extract_embs.extract_contentvec import extract_contentvec_embeddings
@@ -154,49 +152,28 @@ def run_extraction_on_csv(
     report.begin_step("transcription")
 
     try:
-        from extract_transcripts import run_transcription  # importa o novo módulo
+        from extract_transcripts import run_transcription
 
-        run_transcription(
+        # Transcrição (sobrescreve o CSV original com a coluna 'transcript')
+        df = run_transcription(
             input_csv        = csv_path,
             column           = column_name,
             base_dir         = input_dir,
             model_name       = asr_model,
-            output_csv       = csv_path,       # sobrescreve o próprio CSV (como antes)
-            backend          = asr_backend,    # repassa o parâmetro escolhido
-            device           = asr_device,     # repassa o parâmetro escolhido
-            compute_type     = asr_compute,    # repassa o parâmetro escolhido
+            output_csv       = csv_path,
+            device           = asr_device,
+            compute_type     = asr_compute,
             checkpoint_every = checkpoint_every,
         )
-
-        # Recarrega o df após a transcrição (run_transcription salvou no CSV)
-        df = pd.read_csv(csv_path)
         report.ok_step("transcription")
-    else:
-        transcripts = []
-        try:
-            # Recomendação: Usar CPU para ASR para economizar VRAM para os modelos de embeddings
-            device_asr = "cpu" 
-            print(f"Carregando Faster-Whisper ({asr_model}) em {device_asr.upper()} para transcrição...")
-            model = WhisperModel(asr_model, device=device_asr, compute_type="int8")
-            from tqdm import tqdm
-            for filepath in tqdm(filelist, desc="Transcrevendo"):
-                # Realiza a transcrição
-                segments, info = model.transcribe(filepath, beam_size=5)
-                text = " ".join([segment.text for segment in segments]).strip().lower()
-                transcripts.append(text)
-            df["transcript"] = transcripts
-            report.ok_step("transcription")
-            
-            # Liberar memória do modelo de transcrição
-            del model
-            import gc
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
 
     except Exception as e:
         report.fail_step("transcription", e)
         print(f"ERRO em Transcrição: {e}")
+        # Se falhou, tentamos carregar o CSV de qualquer forma para continuar as outras etapas
+        df = pd.read_csv(csv_path)
+        if "transcript" not in df.columns:
+            df["transcript"] = ""
 
     # ------------------------------------------------------------------
     # Utilitário para limpar VRAM entre etapas
