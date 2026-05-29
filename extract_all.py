@@ -1,4 +1,5 @@
 import os
+import gc
 import glob
 import json
 import traceback
@@ -77,7 +78,6 @@ class ExtractionReport:
             n_missing   = len(info["missing_files"])
             print(f"  [{status_icon}] {name:<25} | status={info['status']:<7} | faltando={n_missing}")
             if info["error"]:
-                # Mostra apenas a última linha do traceback
                 last_line = info["error"].strip().splitlines()[-1]
                 print(f"       ERRO: {last_line}")
             if n_missing:
@@ -92,22 +92,44 @@ class ExtractionReport:
 # Verificação pós-extração
 # ---------------------------------------------------------------------------
 
-def verify_outputs(filelist: List[str], input_dir: str, output_dir: str, report: ExtractionReport, step_name: str):
+def verify_outputs(
+    filelist: List[str],
+    input_dir: str,
+    output_dir: str,
+    report: ExtractionReport,
+    step_name: str,
+):
     """Verifica se todos os .pt foram gerados e registra os faltantes."""
     for filepath in filelist:
-        rel_p = relpath(filepath, input_dir)
+        rel_p    = relpath(filepath, input_dir)
         expected = join(output_dir, splitext(rel_p)[0] + ".pt")
         if not exists(expected):
             report.add_missing(step_name, expected)
 
 
-def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, column_name, asr_model, report_dir, suffix):
-    # Relatório
+# ---------------------------------------------------------------------------
+# Pipeline principal
+# ---------------------------------------------------------------------------
+
+def run_extraction_on_csv(
+    csv_path,
+    base_dir,
+    input_dir_name,
+    output_base,
+    column_name,
+    asr_model,
+    report_dir,
+    suffix,
+    checkpoint_every: int = 50,
+    asr_backend: str = "faster",    
+    asr_device: str = "cuda",        
+    asr_compute: str = "int8_float16", 
+):
     report = ExtractionReport(csv_path=csv_path, output_base=output_base)
     os.makedirs(report_dir, exist_ok=True)
 
-    input_dir   = join(base_dir, input_dir_name)
-    
+    input_dir = join(base_dir, input_dir_name)
+
     # 1. Coletar lista de arquivos
     filelist: List[str] = []
     df = pd.read_csv(csv_path)
@@ -116,64 +138,59 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
         filelist.append(full)
 
     # Pastas de saída
-    output_whisper = join(output_base, "whisper")
-    output_content = join(output_base, "contentvec")
-    output_speaker = join(output_base, "speaker")
-    output_f0      = join(output_base, "f0")
-    output_hubert  = join(output_base, "hubert")
-    output_wavlm   = join(output_base, "wavlm")
+    output_whisper  = join(output_base, "whisper")
+    output_content  = join(output_base, "contentvec")
+    output_speaker  = join(output_base, "speaker")
+    output_f0       = join(output_base, "f0")
+    output_hubert   = join(output_base, "hubert")
+    output_wavlm    = join(output_base, "wavlm")
     output_wav2vec2 = join(output_base, "wav2vec2")
 
     print(f"\nTotal de arquivos a processar ({csv_path}): {len(filelist)}")
 
-    # [0/8] ASR Transcription
+    # ------------------------------------------------------------------
+    # [0/8] ASR Transcription  — retoma de onde parou
+    # ------------------------------------------------------------------
     print(f"\n--- [0/8] Transcrição ASR: Whisper ({asr_model}) ---")
     report.begin_step("transcription")
-    
-    # Se a coluna transcript já existe e não está vazia, podemos pular ou perguntar
-    # Para automação, vamos pular se todos estiverem preenchidos
-    if "transcript" in df.columns and df["transcript"].notna().all():
-        print("Coluna 'transcript' já preenchida. Pulando transcrição.")
+
+    try:
+        from extract_transcripts import run_transcription  # importa o novo módulo
+
+        run_transcription(
+            input_csv        = csv_path,
+            column           = column_name,
+            base_dir         = input_dir,
+            model_name       = asr_model,
+            output_csv       = csv_path,       # sobrescreve o próprio CSV (como antes)
+            backend          = asr_backend,    # repassa o parâmetro escolhido
+            device           = asr_device,     # repassa o parâmetro escolhido
+            compute_type     = asr_compute,    # repassa o parâmetro escolhido
+            checkpoint_every = checkpoint_every,
+        )
+
+        # Recarrega o df após a transcrição (run_transcription salvou no CSV)
+        df = pd.read_csv(csv_path)
         report.ok_step("transcription")
-    else:
-        transcripts = []
-        try:
-            # Recomendação: Usar CPU para ASR para economizar VRAM para os modelos de embeddings
-            device_asr = "cpu" 
-            print(f"Carregando Whisper ({asr_model}) em {device_asr.upper()} para transcrição...")
-            model = whisper.load_model(asr_model, device=device_asr)
-            from tqdm import tqdm
-            for filepath in tqdm(filelist, desc="Transcrevendo"):
-                # Se já temos o transcript para este arquivo, podemos pular
-                # (Simplificado: processamos tudo se a coluna estiver incompleta)
-                res = model.transcribe(filepath, fp16=False)
-                transcripts.append(res["text"].strip().lower())
-            df["transcript"] = transcripts
-            report.ok_step("transcription")
-            
-            # Liberar memória do modelo de transcrição
-            del model
-            import gc
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
 
-        except Exception as e:
-            report.fail_step("transcription", e)
-            print(f"ERRO FATAL em Transcrição: {e}")
-            if "transcript" not in df.columns: df["transcript"] = [""] * len(filelist)
+    except Exception as e:
+        report.fail_step("transcription", e)
+        print(f"ERRO em Transcrição: {e}")
 
+    # ------------------------------------------------------------------
+    # Utilitário para limpar VRAM entre etapas
+    # ------------------------------------------------------------------
     def clear_vram():
-        import gc
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+    # ------------------------------------------------------------------
     # [1/8] Whisper Embeddings
+    # ------------------------------------------------------------------
     print("\n--- [1/8] Extração: Whisper Embeddings ---")
     report.begin_step("whisper")
     try:
-        # Usar modelo multilingual por recomendação
         w_model = "whisper-medium" if asr_model == "medium" else asr_model
         extract_whisper_embeddings(filelist, input_dir, output_whisper, w_model)
         verify_outputs(filelist, input_dir, output_whisper, report, "whisper")
@@ -183,11 +200,15 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
     finally:
         clear_vram()
 
+    # ------------------------------------------------------------------
     # [2/8] ContentVec
+    # ------------------------------------------------------------------
     print("\n--- [2/8] Extração: ContentVec ---")
     report.begin_step("contentvec")
     try:
-        extract_contentvec_embeddings(filelist, input_dir, output_content, "contentvec-best", layer=-1, pool=False)
+        extract_contentvec_embeddings(
+            filelist, input_dir, output_content, "contentvec-best", layer=-1, pool=False
+        )
         verify_outputs(filelist, input_dir, output_content, report, "contentvec")
         report.ok_step("contentvec")
     except Exception as e:
@@ -195,11 +216,15 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
     finally:
         clear_vram()
 
+    # ------------------------------------------------------------------
     # [3/8] Speaker ECAPA-TDNN
+    # ------------------------------------------------------------------
     print("\n--- [3/8] Extração: Speaker (ECAPA-TDNN) ---")
     report.begin_step("speaker")
     try:
-        extract_speaker_embeddings(filelist, input_dir, output_speaker, "ecapa-tdnn", aggregate="mean", normalize=True)
+        extract_speaker_embeddings(
+            filelist, input_dir, output_speaker, "ecapa-tdnn", aggregate="mean", normalize=True
+        )
         verify_outputs(filelist, input_dir, output_speaker, report, "speaker")
         report.ok_step("speaker")
     except Exception as e:
@@ -207,12 +232,17 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
     finally:
         clear_vram()
 
+    # ------------------------------------------------------------------
     # [4/8] F0 CREPE
+    # ------------------------------------------------------------------
     print("\n--- [4/8] Extração: F0 (CREPE) ---")
     report.begin_step("f0")
     try:
-        extract_f0_embeddings(filelist, input_dir, output_f0, backend="crepe",
-                              hop_length=160, quantize=False, n_bins=256, f_min=50, f_max=1100)
+        extract_f0_embeddings(
+            filelist, input_dir, output_f0,
+            backend="crepe", hop_length=160, quantize=False,
+            n_bins=256, f_min=50, f_max=1100,
+        )
         verify_outputs(filelist, input_dir, output_f0, report, "f0")
         report.ok_step("f0")
     except Exception as e:
@@ -220,11 +250,15 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
     finally:
         clear_vram()
 
+    # ------------------------------------------------------------------
     # [5/8] HuBERT
+    # ------------------------------------------------------------------
     print("\n--- [5/8] Extração: HuBERT ---")
     report.begin_step("hubert")
     try:
-        extract_hubert_embeddings(filelist, input_dir, output_hubert, "hubert-base", layer=-1, pool=False)
+        extract_hubert_embeddings(
+            filelist, input_dir, output_hubert, "hubert-base", layer=-1, pool=False
+        )
         verify_outputs(filelist, input_dir, output_hubert, report, "hubert")
         report.ok_step("hubert")
     except Exception as e:
@@ -232,11 +266,15 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
     finally:
         clear_vram()
 
+    # ------------------------------------------------------------------
     # [6/8] WavLM
+    # ------------------------------------------------------------------
     print("\n--- [6/8] Extração: WavLM ---")
     report.begin_step("wavlm")
     try:
-        extract_wavlm_embeddings(filelist, input_dir, output_wavlm, "wavlm-base-plus", layer=-1, pool=False)
+        extract_wavlm_embeddings(
+            filelist, input_dir, output_wavlm, "wavlm-base-plus", layer=-1, pool=False
+        )
         verify_outputs(filelist, input_dir, output_wavlm, report, "wavlm")
         report.ok_step("wavlm")
     except Exception as e:
@@ -244,11 +282,15 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
     finally:
         clear_vram()
 
+    # ------------------------------------------------------------------
     # [7/8] wav2vec 2.0
+    # ------------------------------------------------------------------
     print("\n--- [7/8] Extração: wav2vec 2.0 ---")
     report.begin_step("wav2vec2")
     try:
-        extract_wav2vec2_embeddings(filelist, input_dir, output_wav2vec2, "wav2vec2-base", layer=-1, pool=False)
+        extract_wav2vec2_embeddings(
+            filelist, input_dir, output_wav2vec2, "wav2vec2-base", layer=-1, pool=False
+        )
         verify_outputs(filelist, input_dir, output_wav2vec2, report, "wav2vec2")
         report.ok_step("wav2vec2")
     except Exception as e:
@@ -256,18 +298,20 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
     finally:
         clear_vram()
 
-    # Atualizar CSV
+    # ------------------------------------------------------------------
+    # Atualizar CSV com caminhos dos embeddings
+    # ------------------------------------------------------------------
     def get_emb_path(audio_path, out_dir, input_dir):
         rel_p    = os.path.relpath(audio_path, input_dir)
         emb_file = splitext(rel_p)[0] + ".pt"
         return join(out_dir, emb_file)
 
-    df["whisper_path"]    = [get_emb_path(f, output_whisper, input_dir) for f in filelist]
-    df["contentvec_path"] = [get_emb_path(f, output_content, input_dir) for f in filelist]
-    df["speaker_path"]    = [get_emb_path(f, output_speaker, input_dir) for f in filelist]
-    df["f0_path"]         = [get_emb_path(f, output_f0,      input_dir) for f in filelist]
-    df["hubert_path"]     = [get_emb_path(f, output_hubert,  input_dir) for f in filelist]
-    df["wavlm_path"]      = [get_emb_path(f, output_wavlm,   input_dir) for f in filelist]
+    df["whisper_path"]    = [get_emb_path(f, output_whisper,  input_dir) for f in filelist]
+    df["contentvec_path"] = [get_emb_path(f, output_content,  input_dir) for f in filelist]
+    df["speaker_path"]    = [get_emb_path(f, output_speaker,  input_dir) for f in filelist]
+    df["f0_path"]         = [get_emb_path(f, output_f0,       input_dir) for f in filelist]
+    df["hubert_path"]     = [get_emb_path(f, output_hubert,   input_dir) for f in filelist]
+    df["wavlm_path"]      = [get_emb_path(f, output_wavlm,    input_dir) for f in filelist]
     df["wav2vec2_path"]   = [get_emb_path(f, output_wav2vec2, input_dir) for f in filelist]
 
     new_csv = csv_path.replace(".csv", suffix)
@@ -281,27 +325,39 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
         json.dump(report.to_dict(), fh, ensure_ascii=False, indent=2)
 
 
+# ---------------------------------------------------------------------------
+# Entry-point
+# ---------------------------------------------------------------------------
+
 def main():
     parser = argparse.ArgumentParser(
         description="Extrai todos os embeddings e Transcrições ASR."
     )
-    parser.add_argument("-b", "--base-dir",       help="Diretório base do dataset")
-    parser.add_argument("-i", "--input-dir-name",  help="Subpasta de áudios dentro do base-dir")
-    parser.add_argument("-o", "--output-base",     default="embeddings")
-    parser.add_argument("-c", "--csv-path",       help="CSV com lista de arquivos")
-    parser.add_argument("-col", "--column-name",   default="filename")
-    parser.add_argument("--suffix",                default="_with_embs.csv")
-    parser.add_argument("--report-dir",            default="reports")
-    parser.add_argument("--asr-model",             default="medium")
+    parser.add_argument("-b",   "--base-dir",       help="Diretório base do dataset")
+    parser.add_argument("-i",   "--input-dir-name", help="Subpasta de áudios dentro do base-dir")
+    parser.add_argument("-o",   "--output-base",    default="embeddings")
+    parser.add_argument("-c",   "--csv-path",       help="CSV com lista de arquivos")
+    parser.add_argument("-col", "--column-name",    default="filename")
+    parser.add_argument("--suffix",                 default="_with_embs.csv")
+    parser.add_argument("--report-dir",             default="reports")
+    parser.add_argument("--asr-model",              default="medium")
+    parser.add_argument("--checkpoint-every",       type=int, default=50,
+                        help="Salva CSV de transcrição a cada N arquivos (default: 50)")
     
-    # Novas opções para automação
+    # Opções para automação via YAML
     parser.add_argument("--dataset-config", help="Caminho para um YAML de dataset")
-    parser.add_argument("--all-datasets", action="store_true", help="Processa todos os YAMLs em configs/datasets/")
+    parser.add_argument("--all-datasets",   action="store_true",
+                        help="Processa todos os YAMLs em configs/datasets/")
     
+    # === AQUI ESTÁ A ATUALIZAÇÃO PRINCIPAL ===
+    parser.add_argument("--asr-backend",      default="faster",       choices=["openai", "faster", "transformers"])
+    parser.add_argument("--asr-device",       default="cuda",         choices=["cpu", "cuda"])
+    parser.add_argument("--asr-compute-type", default="int8_float16")   
+
     args = parser.parse_args()
 
     from omegaconf import OmegaConf
-    
+
     configs_to_process = []
     if args.all_datasets:
         configs_to_process = glob.glob("configs/datasets/*.yaml")
@@ -310,51 +366,61 @@ def main():
 
     if configs_to_process:
         for cfg_path in configs_to_process:
-            print(f"\nProcessing dataset config: {cfg_path}")
-            cfg = OmegaConf.load(cfg_path)
+            print(f"\nProcessando dataset config: {cfg_path}")
+            cfg     = OmegaConf.load(cfg_path)
             ds_name = cfg.datasets.name
-            
+
             for split in ["train", "val", "test"]:
-                if split in cfg.datasets:
-                    csv_path = cfg.datasets[split].metadata_path
-                    if not exists(csv_path):
-                        print(f"Aviso: CSV não encontrado para {ds_name} {split}: {csv_path}")
-                        continue
-                    
-                    # Tenta inferir base_dir e input_dir
-                    # Frequentemente o base_dir é o pai da pasta 'sets' ou onde o CSV está
-                    base_dir = os.path.dirname(os.path.dirname(csv_path)) 
-                    # Se o CSV estiver na raiz do dataset, o acima pode estar errado.
-                    # Vamos usar o diretório do CSV como fallback.
-                    if not exists(base_dir): base_dir = os.path.dirname(csv_path)
-                    
-                    output_base = f"embeddings/{ds_name}/{split}"
-                    
-                    run_extraction_on_csv(
-                        csv_path       = csv_path,
-                        base_dir       = base_dir,
-                        input_dir_name = ".",
-                        output_base    = output_base,
-                        column_name    = cfg.datasets[split].get("column_name", args.column_name),
-                        asr_model      = args.asr_model,
-                        report_dir     = join(args.report_dir, f"{ds_name}_{split}"),
-                        suffix         = args.suffix
-                    )
+                if split not in cfg.datasets:
+                    continue
+
+                csv_path = cfg.datasets[split].metadata_path
+                if not exists(csv_path):
+                    print(f"Aviso: CSV não encontrado para {ds_name} {split}: {csv_path}")
+                    continue
+
+                base_dir = os.path.dirname(os.path.dirname(csv_path))
+                if not exists(base_dir):
+                    base_dir = os.path.dirname(csv_path)
+
+                output_base = f"embeddings/{ds_name}/{split}"
+
+                run_extraction_on_csv(
+                    csv_path         = csv_path,
+                    base_dir         = base_dir,
+                    input_dir_name   = ".",
+                    output_base      = output_base,
+                    column_name      = cfg.datasets[split].get("column_name", args.column_name),
+                    asr_model        = args.asr_model,
+                    report_dir       = join(args.report_dir, f"{ds_name}_{split}"),
+                    suffix           = args.suffix,
+                    checkpoint_every = args.checkpoint_every,
+                    asr_backend      = args.asr_backend,
+                    asr_device       = args.asr_device,
+                    asr_compute      = args.asr_compute_type,
+                )
     else:
-        # Modo manual (Compatibilidade com extract.sh)
+        # Modo manual (compatibilidade com extract.sh)
         if not args.base_dir or not args.input_dir_name or not args.csv_path:
-            print("Erro: Forneça --base-dir, --input-dir-name e --csv-path ou use --dataset-config / --all-datasets")
+            print(
+                "Erro: Forneça --base-dir, --input-dir-name e --csv-path "
+                "ou use --dataset-config / --all-datasets"
+            )
             return
-            
+
         run_extraction_on_csv(
-            csv_path       = args.csv_path,
-            base_dir       = args.base_dir,
-            input_dir_name = args.input_dir_name,
-            output_base    = args.output_base,
-            column_name    = args.column_name,
-            asr_model      = args.asr_model,
-            report_dir     = join(args.report_dir, os.path.basename(args.csv_path).replace(".csv", "")),
-            suffix         = args.suffix
+            csv_path         = args.csv_path,
+            base_dir         = args.base_dir,
+            input_dir_name   = args.input_dir_name,
+            output_base      = args.output_base,
+            column_name      = args.column_name,
+            asr_model        = args.asr_model,
+            report_dir       = join(args.report_dir, os.path.basename(args.csv_path).replace(".csv", "")),
+            suffix           = args.suffix,
+            checkpoint_every = args.checkpoint_every,
+            asr_backend      = args.asr_backend,
+            asr_device       = args.asr_device,
+            asr_compute      = args.asr_compute_type,
         )
 
 
