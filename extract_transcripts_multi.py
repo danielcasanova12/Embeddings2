@@ -4,19 +4,20 @@ import torch
 import pandas as pd
 import argparse
 from tqdm import tqdm
-import whisper
+from faster_whisper import WhisperModel
 from transformers import pipeline
 from os.path import join, exists
 
 def transcribe_whisper(model_name, audio_paths, device):
     # Forçamos CPU para Whisper ASR para economizar VRAM
-    print(f"Carregando Whisper '{model_name}' na CPU...")
-    model = whisper.load_model(model_name, device="cpu")
+    print(f"Carregando Faster-Whisper '{model_name}' na CPU...")
+    model = WhisperModel(model_name, device="cpu", compute_type="int8")
     results = []
     for path in tqdm(audio_paths, desc="Whisper ASR"):
         try:
-            res = model.transcribe(path, fp16=False)
-            results.append(res["text"].strip().lower())
+            segments, info = model.transcribe(path, beam_size=5)
+            text = " ".join([segment.text for segment in segments]).strip().lower()
+            results.append(text)
         except Exception as e:
             print(f"Erro Whisper em {path}: {e}")
             results.append("")
@@ -48,7 +49,7 @@ def main():
     args = parser.parse_args()
 
     df = pd.read_csv(args.input_csv)
-    audio_paths = [join(args.base_dir, f) if not os.path.isabs(f) else f for f in df[args.column]]
+    audio_paths = [join(args.base_dir, str(f)) if not os.path.isabs(str(f)) else str(f) for f in df[args.column]]
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -58,7 +59,7 @@ def main():
     # Transcrição com Wav2Vec2
     df["transcript_w2v2"] = transcribe_wav2vec2(args.w2v2_model, audio_paths, device)
     
-    output_path = args.output_csv or args.input_csv.replace(".csv", "_transcribed.csv")
+    output_path = args.output_csv or args.input_csv
     df.to_csv(output_path, index=False)
     print(f"Transcrições salvas em: {output_path}")
 

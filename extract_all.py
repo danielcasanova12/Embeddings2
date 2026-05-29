@@ -8,8 +8,9 @@ from typing import List, Dict
 from os.path import join, exists, relpath, splitext
 
 import pandas as pd
-import whisper
+from faster_whisper import WhisperModel
 import torch
+import whisper
 
 from extract_embs.extract_whisper_embeddings import extract_whisper_embeddings
 from extract_embs.extract_contentvec import extract_contentvec_embeddings
@@ -127,7 +128,7 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
     print(f"\nTotal de arquivos a processar ({csv_path}): {len(filelist)}")
 
     # [0/8] ASR Transcription
-    print(f"\n--- [0/8] Transcrição ASR: Whisper ({asr_model}) ---")
+    print(f"\n--- [0/8] Transcrição ASR: Faster-Whisper ({asr_model}) ---")
     report.begin_step("transcription")
     
     # Se a coluna transcript já existe e não está vazia, podemos pular ou perguntar
@@ -140,14 +141,14 @@ def run_extraction_on_csv(csv_path, base_dir, input_dir_name, output_base, colum
         try:
             # Recomendação: Usar CPU para ASR para economizar VRAM para os modelos de embeddings
             device_asr = "cpu" 
-            print(f"Carregando Whisper ({asr_model}) em {device_asr.upper()} para transcrição...")
-            model = whisper.load_model(asr_model, device=device_asr)
+            print(f"Carregando Faster-Whisper ({asr_model}) em {device_asr.upper()} para transcrição...")
+            model = WhisperModel(asr_model, device=device_asr, compute_type="int8")
             from tqdm import tqdm
             for filepath in tqdm(filelist, desc="Transcrevendo"):
-                # Se já temos o transcript para este arquivo, podemos pular
-                # (Simplificado: processamos tudo se a coluna estiver incompleta)
-                res = model.transcribe(filepath, fp16=False)
-                transcripts.append(res["text"].strip().lower())
+                # Realiza a transcrição
+                segments, info = model.transcribe(filepath, beam_size=5)
+                text = " ".join([segment.text for segment in segments]).strip().lower()
+                transcripts.append(text)
             df["transcript"] = transcripts
             report.ok_step("transcription")
             
