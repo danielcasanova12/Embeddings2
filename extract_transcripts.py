@@ -11,10 +11,10 @@ def run_transcription(
     input_csv,
     column="filename",
     base_dir="",
-    model_name="medium",
+    model_name="large-v3",
     output_csv=None,
-    device="cpu",
-    compute_type="int8",
+    device="cuda",
+    compute_type="float16",
     beam_size=5,
     checkpoint_every=50
 ):
@@ -73,7 +73,7 @@ def main():
     parser.add_argument("-i", "--input_csv", required=True, help="CSV com caminhos de áudio")
     parser.add_argument("-col", "--column", default="filename", help="Coluna com o caminho do arquivo")
     parser.add_argument("-b", "--base_dir", default="", help="Diretório base para os áudios")
-    parser.add_argument("-m", "--model", default="medium", help="Modelo Faster-Whisper (tiny, base, small, medium, large-v3)")
+    parser.add_argument("-m", "--model", default="large-v3", help="Modelo Faster-Whisper (tiny, base, small, medium, large-v3)")
     parser.add_argument("-o", "--output_csv", help="Caminho para o CSV de saída")
     parser.add_argument("--device", default="cpu", help="Device to use (cpu or cuda)")
     parser.add_argument("--compute_type", default="int8", help="Compute type (int8, float16, float32)")

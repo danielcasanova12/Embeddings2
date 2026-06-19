@@ -43,7 +43,7 @@ def main():
     parser.add_argument("-i", "--input_csv", required=True)
     parser.add_argument("-col", "--column", default="filename")
     parser.add_argument("-b", "--base_dir", default="")
-    parser.add_argument("--whisper_model", default="medium")
+    parser.add_argument("--whisper_model", default="large-v3")
     parser.add_argument("--w2v2_model", default="facebook/wav2vec2-large-xlsr-53-english") # Exemplo EN, pode ser alterado por língua
     parser.add_argument("-o", "--output_csv", help="Caminho para o CSV de saída")
     args = parser.parse_args()

@@ -154,13 +154,22 @@ def run_extraction_on_csv(
     try:
         from extract_transcripts import run_transcription
 
-        # Transcrição (sobrescreve o CSV original com a coluna 'transcript')
+        # Transcrição (salva no output_base para não sujar o original)
+        os.makedirs(output_base, exist_ok=True)
+        transcription_csv = join(output_base, "metadata_transcripts.csv")
+        
+        # Se já existir o arquivo de transcrição no output_base, usamos ele para continuar
+        current_csv = csv_path
+        if exists(transcription_csv):
+            print(f"Retomando transcrições de: {transcription_csv}")
+            current_csv = transcription_csv
+
         df = run_transcription(
-            input_csv        = csv_path,
+            input_csv        = current_csv,
             column           = column_name,
             base_dir         = input_dir,
             model_name       = asr_model,
-            output_csv       = csv_path,
+            output_csv       = transcription_csv,
             device           = asr_device,
             compute_type     = asr_compute,
             checkpoint_every = checkpoint_every,
@@ -170,8 +179,11 @@ def run_extraction_on_csv(
     except Exception as e:
         report.fail_step("transcription", e)
         print(f"ERRO em Transcrição: {e}")
-        # Se falhou, tentamos carregar o CSV de qualquer forma para continuar as outras etapas
-        df = pd.read_csv(csv_path)
+        # Se falhou, tentamos carregar o que temos
+        if exists(transcription_csv):
+            df = pd.read_csv(transcription_csv)
+        else:
+            df = pd.read_csv(csv_path)
         if "transcript" not in df.columns:
             df["transcript"] = ""
 
@@ -312,9 +324,10 @@ def run_extraction_on_csv(
     df["wavlm_path"]      = [get_emb_path(f, output_wavlm,    input_dir) for f in filelist]
     df["wav2vec2_path"]   = [get_emb_path(f, output_wav2vec2, input_dir) for f in filelist]
 
-    new_csv = csv_path.replace(".csv", suffix)
+    # Salva o CSV final no output_base (pasta dos embeddings)
+    new_csv = join(output_base, f"metadata{suffix}")
     df.to_csv(new_csv, index=False)
-    print(f"CSV salvo em: {new_csv}")
+    print(f"CSV final salvo em: {new_csv}")
 
     report.finalize()
     report.print_summary()
@@ -338,7 +351,7 @@ def main():
     parser.add_argument("-col", "--column-name",    default="filename")
     parser.add_argument("--suffix",                 default="_with_embs.csv")
     parser.add_argument("--report-dir",             default="reports")
-    parser.add_argument("--asr-model",              default="medium")
+    parser.add_argument("--asr-model",              default="large-v3")
     parser.add_argument("--checkpoint-every",       type=int, default=50,
                         help="Salva CSV de transcrição a cada N arquivos (default: 50)")
     
