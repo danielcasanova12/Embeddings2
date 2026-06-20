@@ -120,7 +120,7 @@ def run_extraction_on_csv(
     report_dir,
     suffix,
     checkpoint_every: int = 50,
-    asr_backend: str = "faster",    
+    asr_backend: str = "nemo",    
     asr_device: str = "cuda",        
     asr_compute: str = "int8_float16", 
 ):
@@ -148,7 +148,7 @@ def run_extraction_on_csv(
     print(f"\nTotal de arquivos a processar ({csv_path}): {len(filelist)}")
 
     # [0/8] ASR Transcription
-    print(f"\n--- [0/8] Transcrição ASR: Faster-Whisper ({asr_model}) ---")
+    print(f"\n--- [0/8] Transcrição ASR: {asr_backend} ({asr_model}) ---")
     report.begin_step("transcription")
 
     try:
@@ -173,6 +173,7 @@ def run_extraction_on_csv(
             device           = asr_device,
             compute_type     = asr_compute,
             checkpoint_every = checkpoint_every,
+            backend          = asr_backend,
         )
         report.ok_step("transcription")
 
@@ -351,7 +352,7 @@ def main():
     parser.add_argument("-col", "--column-name",    default="filename")
     parser.add_argument("--suffix",                 default="_with_embs.csv")
     parser.add_argument("--report-dir",             default="reports")
-    parser.add_argument("--asr-model",              default="large-v3")
+    parser.add_argument("--asr-model",              default="nvidia/parakeet-tdt-0.6b-v3")
     parser.add_argument("--checkpoint-every",       type=int, default=50,
                         help="Salva CSV de transcrição a cada N arquivos (default: 50)")
     
@@ -361,7 +362,7 @@ def main():
                         help="Processa todos os YAMLs em configs/datasets/")
     
     # === AQUI ESTÁ A ATUALIZAÇÃO PRINCIPAL ===
-    parser.add_argument("--asr-backend",      default="faster",       choices=["openai", "faster", "transformers"])
+    parser.add_argument("--asr-backend",      default="nemo",       choices=["nemo"])
     parser.add_argument("--asr-device",       default="cuda",         choices=["cpu", "cuda"])
     parser.add_argument("--asr-compute-type", default="int8_float16")   
 
