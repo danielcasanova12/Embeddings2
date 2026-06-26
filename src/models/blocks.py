@@ -135,3 +135,70 @@ def build_adapters(emb_cfgs: list, adapter_cfg: dict) -> nn.ModuleList:
         )
         for e in emb_cfgs
     ])
+
+
+# ---------------------------------------------------------------------------
+# CKA – Centered Kernel Alignment (linear kernel)
+# ---------------------------------------------------------------------------
+
+def linear_cka(X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
+    """
+    Similaridade CKA linear entre duas matrizes de representações.
+
+    Args:
+        X: [N, D1]
+        Y: [N, D2]
+
+    Returns:
+        Escalar em [0, 1] — 1 significa representações linearmente idênticas
+        (a menos de rotação/escala).
+    """
+    def _center(K: torch.Tensor) -> torch.Tensor:
+        n = K.shape[0]
+        ones = torch.ones(n, 1, device=K.device, dtype=K.dtype) / n
+        return K - ones @ K.T @ ones.T - ones @ K @ ones.T + ones @ K.T @ ones.T
+
+    K  = X @ X.T
+    L  = Y @ Y.T
+    Kc = _center(K)
+    Lc = _center(L)
+
+    hsic_xy = (Kc * Lc).sum()
+    hsic_xx = (Kc * Kc).sum()
+    hsic_yy = (Lc * Lc).sum()
+
+    return hsic_xy / torch.sqrt(hsic_xx * hsic_yy).clamp(min=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# GRL – Gradient Reversal Layer (domain adaptation)
+# ---------------------------------------------------------------------------
+
+class _GRLFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x: torch.Tensor, alpha: float) -> torch.Tensor:
+        ctx.alpha = alpha
+        return x.clone()
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        return -ctx.alpha * grad_output, None
+
+
+class GRL(nn.Module):
+    """
+    Gradient Reversal Layer.
+
+    Forward pass é identidade; backward multiplica o gradiente por -alpha,
+    revertendo a direção do aprendizado para um classificador de domínio.
+
+    Args:
+        alpha: escala do gradiente revertido (default 1.0).
+               Pode ser atualizado dinamicamente: `model.grl.alpha = novo_valor`
+    """
+    def __init__(self, alpha: float = 1.0):
+        super().__init__()
+        self.alpha = alpha
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return _GRLFunction.apply(x, self.alpha)

@@ -18,7 +18,7 @@ from extract_embs.extract_f0 import extract_f0_embeddings
 from extract_embs.extract_hubert_embeddings import extract_hubert_embeddings
 from extract_embs.extract_wavlm_embeddings import extract_wavlm_embeddings
 from extract_embs.extract_wav2vec2_embeddings import extract_wav2vec2_embeddings
-
+from extract_transcripts_multi import transcribe_whisper, transcribe_wav2vec2
 
 # ---------------------------------------------------------------------------
 # Relatório de execução
@@ -119,8 +119,7 @@ def run_extraction_on_csv(
     asr_model,
     report_dir,
     suffix,
-    checkpoint_every: int = 50,
-    asr_backend: str = "nemo",    
+    checkpoint_every: int = 50, 
     asr_device: str = "cuda",        
     asr_compute: str = "int8_float16", 
 ):
@@ -148,43 +147,35 @@ def run_extraction_on_csv(
     print(f"\nTotal de arquivos a processar ({csv_path}): {len(filelist)}")
 
     # [0/8] ASR Transcription
-    print(f"\n--- [0/8] Transcrição ASR: {asr_backend} ({asr_model}) ---")
+    print(f"\n--- [0/8] Transcrição ASR Multi-Modelo ---")
     report.begin_step("transcription")
 
     try:
-        from extract_transcripts import run_transcription
-
-        # Transcrição (salva no output_base para não sujar o original)
         os.makedirs(output_base, exist_ok=True)
         transcription_csv = join(output_base, "metadata_transcripts.csv")
-        
-        # Se já existir o arquivo de transcrição no output_base, usamos ele para continuar
-        current_csv = csv_path
-        if exists(transcription_csv):
-            print(f"Retomando transcrições de: {transcription_csv}")
-            current_csv = transcription_csv
 
-        df = run_transcription(
-            input_csv        = current_csv,
-            column           = column_name,
-            base_dir         = input_dir,
-            model_name       = asr_model,
-            output_csv       = transcription_csv,
-            device           = asr_device,
-            compute_type     = asr_compute,
-            checkpoint_every = checkpoint_every,
-            backend          = asr_backend,
-        )
+        current_csv = transcription_csv if exists(transcription_csv) else csv_path
+        df = pd.read_csv(current_csv)
+
+        audio_paths = [
+            f if os.path.isabs(str(f)) else join(input_dir, str(f))
+            for f in df[column_name]
+        ]
+
+        print(f"  Modelo ASR: Whisper {asr_model} ({len(audio_paths)} arquivos)...")
+        df["transcript_whisper"] = transcribe_whisper(asr_model, audio_paths, asr_device)
+        df.to_csv(transcription_csv, index=False)  # checkpoint após cada modelo
+
+        # transcript principal = Whisper (multilingual: PT, EN, ZH)
+        df["transcript"] = df["transcript_whisper"]
+        df.to_csv(transcription_csv, index=False)
         report.ok_step("transcription")
 
     except Exception as e:
         report.fail_step("transcription", e)
         print(f"ERRO em Transcrição: {e}")
-        # Se falhou, tentamos carregar o que temos
-        if exists(transcription_csv):
-            df = pd.read_csv(transcription_csv)
-        else:
-            df = pd.read_csv(csv_path)
+        fallback = join(output_base, "metadata_transcripts.csv")
+        df = pd.read_csv(fallback) if exists(fallback) else pd.read_csv(csv_path)
         if "transcript" not in df.columns:
             df["transcript"] = ""
 
@@ -202,7 +193,7 @@ def run_extraction_on_csv(
     print("\n--- [1/8] Extração: Whisper Embeddings ---")
     report.begin_step("whisper")
     try:
-        w_model = "whisper-medium" if asr_model == "medium" else asr_model
+        w_model = asr_model if asr_model.startswith("whisper-") else f"whisper-{asr_model}"
         extract_whisper_embeddings(filelist, input_dir, output_whisper, w_model)
         verify_outputs(filelist, input_dir, output_whisper, report, "whisper")
         report.ok_step("whisper")
@@ -352,7 +343,7 @@ def main():
     parser.add_argument("-col", "--column-name",    default="filename")
     parser.add_argument("--suffix",                 default="_with_embs.csv")
     parser.add_argument("--report-dir",             default="reports")
-    parser.add_argument("--asr-model",              default="nvidia/parakeet-tdt-0.6b-v3")
+    parser.add_argument("--asr-model",              default="large-v3")
     parser.add_argument("--checkpoint-every",       type=int, default=50,
                         help="Salva CSV de transcrição a cada N arquivos (default: 50)")
     
@@ -362,7 +353,6 @@ def main():
                         help="Processa todos os YAMLs em configs/datasets/")
     
     # === AQUI ESTÁ A ATUALIZAÇÃO PRINCIPAL ===
-    parser.add_argument("--asr-backend",      default="nemo",       choices=["nemo"])
     parser.add_argument("--asr-device",       default="cuda",         choices=["cpu", "cuda"])
     parser.add_argument("--asr-compute-type", default="int8_float16")   
 
@@ -407,7 +397,6 @@ def main():
                     report_dir       = join(args.report_dir, f"{ds_name}_{split}"),
                     suffix           = args.suffix,
                     checkpoint_every = args.checkpoint_every,
-                    asr_backend      = args.asr_backend,
                     asr_device       = args.asr_device,
                     asr_compute      = args.asr_compute_type,
                 )
@@ -430,7 +419,6 @@ def main():
             report_dir       = join(args.report_dir, os.path.basename(args.csv_path).replace(".csv", "")),
             suffix           = args.suffix,
             checkpoint_every = args.checkpoint_every,
-            asr_backend      = args.asr_backend,
             asr_device       = args.asr_device,
             asr_compute      = args.asr_compute_type,
         )

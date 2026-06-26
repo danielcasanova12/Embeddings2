@@ -4,7 +4,8 @@
 # Extrai embeddings (Whisper, ContentVec, Speaker, F0) para todos os datasets
 # e splits (train / val / test).
 # =============================================================================
-
+# Adiciona no topo do run_all_extractions.sh, após o shebang
+export LD_LIBRARY_PATH=$(python -c "import nvidia.cublas; import os; print(os.path.dirname(nvidia.cublas.__file__))")/lib:$LD_LIBRARY_PATH
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

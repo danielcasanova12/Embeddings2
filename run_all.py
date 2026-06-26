@@ -5,6 +5,7 @@ import pandas as pd
 import glob
 import datetime
 import subprocess
+from pathlib import Path
 from omegaconf import OmegaConf
 
 # ReportLab imports
@@ -15,9 +16,29 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 
 from src.train import run_experiment
 
-# Caminhos padrão dos CSVs de resultados
 TRAIN_RESULTS_CSV = "train_results.csv"
 TEST_RESULTS_CSV  = "test_results.csv"
+
+# -----------------------------------------------------------------------
+# Novo: resolve paths dos CSVs a partir do novo padrão de pastas
+# -----------------------------------------------------------------------
+EMBEDDINGS_ROOT = Path("embeddings")  # mantém para compatibilidade
+
+def resolve_data_paths(cfg_dict: dict) -> dict:
+    """
+    Usa os metadata_path já definidos no config (absolutos ou relativos).
+    Apenas valida existência e avisa — não reescreve mais o path.
+    """
+    datasets = cfg_dict.get("datasets", {})
+    for split in ["train", "val", "test"]:
+        split_cfg = datasets.get(split, {})
+        path = split_cfg.get("metadata_path", "")
+        if path and not Path(path).exists():
+            raise FileNotFoundError(
+                f"metadata_path não encontrado para split '{split}': {path}"
+            )
+    return cfg_dict
+
 
 def save_to_csv(row_dict, csv_path):
     df = pd.DataFrame([row_dict])
@@ -26,9 +47,15 @@ def save_to_csv(row_dict, csv_path):
     else:
         df.to_csv(csv_path, mode='a', header=False, index=False)
 
+
 def run_command(cmd, desc):
+    """Executa subcomando garantindo que src/ seja encontrado."""
     print(f"\n>>> Executando {desc}: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
+    env = os.environ.copy()
+    project_root = str(Path(__file__).parent.resolve())
+    env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
+    subprocess.run(cmd, check=True, env=env)
+
 
 def gerar_relatorio_pdf(resultados_gerais, resultados_analise, caminho_saida):
     """Gera um relatório PDF completo com tabelas e referências a plots."""
@@ -39,7 +66,6 @@ def gerar_relatorio_pdf(resultados_gerais, resultados_analise, caminho_saida):
     elementos.append(Paragraph("Relatório Consolidado de Experimentos MOS", estilos['Title']))
     elementos.append(Spacer(1, 12))
 
-    # --- Seção 1: Experimentos de Treino ---
     elementos.append(Paragraph("1. Experimentos de Treino (Protocolo Completo 1-10)", estilos['Heading2']))
     if resultados_gerais:
         cabecalhos = ["ID", "Tipo", "Embeddings", "Pearson", "Spearman", "Detalhes Extra"]
@@ -53,7 +79,6 @@ def gerar_relatorio_pdf(resultados_gerais, resultados_analise, caminho_saida):
                 Paragraph(str(linha.get("Spearman", "")), estilos['Normal']),
                 Paragraph(str(linha.get("Detalhes Extra", "-")), estilos['Normal']),
             ])
-
         t = Table(dados_tabela, colWidths=[80, 100, 200, 60, 60, 200])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
@@ -64,7 +89,6 @@ def gerar_relatorio_pdf(resultados_gerais, resultados_analise, caminho_saida):
 
     elementos.append(Spacer(1, 24))
 
-    # --- Seção 2: Detalhamento de Pesos (Exp 9) ---
     pesos_exp = [r for r in resultados_gerais if r.get("Tipo") == "weighted_fusion"]
     if pesos_exp:
         elementos.append(Paragraph("1.1 Detalhamento de Pesos Dinâmicos (Exp 9)", estilos['Heading3']))
@@ -76,8 +100,6 @@ def gerar_relatorio_pdf(resultados_gerais, resultados_analise, caminho_saida):
                 tw.setStyle(TableStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey)]))
                 elementos.append(tw)
                 elementos.append(Spacer(1, 12))
-
-    # --- Seção 3: Experimentos de Análise (4, 5, 6, 7) ---
 
     elementos.append(Paragraph("2. Experimentos de Análise e Robustez", estilos['Heading2']))
     for analise in resultados_analise:
@@ -95,7 +117,6 @@ def gerar_relatorio_pdf(resultados_gerais, resultados_analise, caminho_saida):
             for p in analise['plots']:
                 if os.path.exists(p):
                     elementos.append(Spacer(1, 12))
-                    # Ajusta tamanho da imagem para caber no PDF
                     img = Image(p, width=400, height=300)
                     elementos.append(img)
                     elementos.append(Paragraph(f"Figura: {os.path.basename(p)}", estilos['Italic']))
@@ -104,24 +125,34 @@ def gerar_relatorio_pdf(resultados_gerais, resultados_analise, caminho_saida):
 
     doc.build(elementos)
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Executa o pipeline completo de 8 experimentos.")
-    parser.add_argument("-d", "--dataset-config", default="configs/datasets/bvcc.yaml", help="Configuração do dataset")
-    parser.add_argument("-m", "--model-defaults", default="configs/model.yaml", help="Configuração base/default")
+    parser = argparse.ArgumentParser(description="Executa o pipeline completo de experimentos.")
+    parser.add_argument("-d", "--dataset-config", default="configs/datasets/bvcc.yaml")
+    parser.add_argument("-m", "--model-defaults",  default="configs/model.yaml")
     args = parser.parse_args()
 
     base_model_cfg = OmegaConf.load(args.model_defaults)
     dataset_cfg    = OmegaConf.load(args.dataset_config)
     dataset_name   = dataset_cfg.datasets.name
 
-    pdf_results_train = []
-    analysis_results = []
+    # Valida que os CSVs existem antes de começar
+    dataset_root = EMBEDDINGS_ROOT / dataset_name
+    missing = []
+    for split in ["train", "val", "test"]:
+        p = dataset_root / split / "metadata_with_embs.csv"
+        if not p.exists():
+            missing.append(str(p))
+    if missing:
+        print("AVISO: CSVs de embeddings não encontrados:")
+        for m in missing:
+            print(f"  {m}")
+        print("Execute o pipeline de extração antes de rodar os experimentos.\n")
 
-    # --- FASE 1: Experimentos 1, 2, 3, 8 (Treinamento) ---
-    # Busca por configs que sigam o padrão exp1, exp2, exp3, exp8
-    pattern = "configs/experiments/{exp1,exp2,exp3,exp8}/**/*.yaml"
-    import glob
-    # Nota: Windows glob pode não suportar {} nativamente, vamos fazer manual
+    pdf_results_train = []
+    analysis_results  = []
+
+    # --- FASE 1: Treinamento (exp1, 2, 3, 8, 9, 10) ---
     exp_dirs = ["exp1", "exp2", "exp3", "exp8", "exp9", "exp10"]
     experiment_files = []
     for ed in exp_dirs:
@@ -135,24 +166,27 @@ def main():
         cfg = OmegaConf.merge(base_model_cfg, dataset_cfg, exp_cfg)
         cfg_dict = OmegaConf.to_container(cfg, resolve=True)
 
+        # ← ponto central do ajuste: reescreve os paths
+        try:
+            cfg_dict = resolve_data_paths(cfg_dict)
+        except ValueError as e:
+            print(f"  Skipping {exp_file}: {e}")
+            continue
+
         try:
             _, eval_row = run_experiment(cfg_dict)
             pdf_results_train.append({
-                "ID": eval_row["experiment"],
-                "Tipo": eval_row["model_type"],
+                "ID":        eval_row["experiment"],
+                "Tipo":      eval_row["model_type"],
                 "Embeddings": eval_row["embeddings"],
-                "Pearson": f"{eval_row.get('test_pearson', 0):.4f}",
-                "Spearman": f"{eval_row.get('test_spearman', 0):.4f}"
+                "Pearson":   f"{eval_row.get('test_pearson', 0):.4f}",
+                "Spearman":  f"{eval_row.get('test_spearman', 0):.4f}",
             })
         except Exception as e:
             print(f"Erro no treino {exp_file}: {e}")
 
-    # --- FASE 2: Experimento 4 (Zero-Shot) ---
+    # --- FASE 2: Exp 4 (Zero-Shot) ---
     print("\n--- [Exp 4] Zero-Shot Evaluation ---")
-    # ... rest of steps ...
-
-    # Assume que temos os checkpoints dos experimentos FULL e minus_c do exp2
-    # Procurar o melhor checkpoint (simplificado)
     ckpt_full = glob.glob("checkpoints/exp2_full/**/*.ckpt", recursive=True)
     ckpt_minc = glob.glob("checkpoints/exp2_minus_c/**/*.ckpt", recursive=True)
 
@@ -161,66 +195,64 @@ def main():
             "python", "scripts/exp4_zeroshot.py",
             "--full", ckpt_full[0],
             "--minc", ckpt_minc[0],
-            "-c", args.dataset_config # Avalia no próprio dataset como teste ou outros
+            "-c", args.dataset_config,
         ], "Exp 4")
         analysis_results.append({
-            "titulo": "Experimento 4: Zero-Shot Generalization",
-            "descricao": "Comparação de robustez entre modelos FULL e -C (sem lexical) em novos domínios.",
-            "csv": "results/zeroshot/zeroshot_results.csv"
+            "titulo":    "Experimento 4: Zero-Shot Generalization",
+            "descricao": "Comparação de robustez entre modelos FULL e -C em novos domínios.",
+            "csv":       "results/zeroshot/zeroshot_results.csv",
         })
 
-    # --- FASE 3: Experimento 5 (Probing) ---
+    # --- FASE 3: Exp 5 (Probing) ---
     print("\n--- [Exp 5] Linear Probing ---")
-    # Rodar probing para um dos modelos, ex: whisper
     run_command([
         "python", "scripts/exp5_probing.py",
-        "-c", "configs/experiments/exp1/whisper.yaml"
+        "-c", "configs/experiments/exp1/whisper.yaml",
     ], "Exp 5")
     analysis_results.append({
-        "titulo": "Experimento 5: Probing Linear Analysis",
+        "titulo":    "Experimento 5: Probing Linear Analysis",
         "descricao": "Análise de quanta informação de locutor, ruído e conteúdo está codificada linearmente.",
-        "csv": "results/probing/probing_results_whisper.csv"
+        "csv":       "results/probing/probing_results_whisper.csv",
     })
 
-    # --- FASE 4: Experimento 6 (UMAP) ---
+    # --- FASE 4: Exp 6 (UMAP) ---
     print("\n--- [Exp 6] UMAP Visualization ---")
     if ckpt_minc:
         run_command([
             "python", "scripts/exp6_umap.py",
             "-k", ckpt_minc[0],
-            "-c", args.dataset_config
+            "-c", args.dataset_config,
         ], "Exp 6")
         analysis_results.append({
-            "titulo": "Experimento 6: UMAP Latent Space",
+            "titulo":    "Experimento 6: UMAP Latent Space",
             "descricao": "Visualização do espaço latente colorido por MOS e por Dataset.",
-            "plots": ["results/umap/umap_mos.png", "results/umap/umap_datasets.png"]
+            "plots":     ["results/umap/umap_mos.png", "results/umap/umap_datasets.png"],
         })
 
-    # --- FASE 5: Experimento 7 (Perturbation) ---
+    # --- FASE 5: Exp 7 (Perturbation) ---
     print("\n--- [Exp 7] Semantic Perturbation ---")
-    # Primeiro gerar pares (requer que o extract_all tenha gerado o _with_embs.csv com transcrição)
-    dataset_with_trans = args.dataset_config.replace(".yaml", "").split("/")[-1] + "_with_embs.csv"
-    # Nota: O caminho real depende de onde extract_all salvou. Assume local ou base-dir.
+    dataset_with_trans = str(dataset_root / "test" / "metadata_with_embs.csv")
     if os.path.exists(dataset_with_trans):
         run_command([
             "python", "scripts/prepare_perturbation_pairs.py",
-            "-i", dataset_with_trans
+            "-i", dataset_with_trans,
         ], "Prep Exp 7")
         run_command([
             "python", "scripts/exp7_perturbation.py",
-            "-i", "perturbation_pairs.csv"
+            "-i", "perturbation_pairs.csv",
         ], "Exp 7")
         analysis_results.append({
-            "titulo": "Experimento 7: Semantic Perturbation Analysis",
-            "descricao": "Medição da sensibilidade dos embeddings a variações de conteúdo vs qualidade.",
-            "csv": "results/perturbation/perturbation_results.csv"
+            "titulo":    "Experimento 7: Semantic Perturbation Analysis",
+            "descricao": "Sensibilidade dos embeddings a variações de conteúdo vs qualidade.",
+            "csv":       "results/perturbation/perturbation_results.csv",
         })
 
-    # --- GERAÇÃO DO PDF FINAL ---
-    data_atual = datetime.datetime.now().strftime("%Y-%m-%d")
+    # --- PDF Final ---
+    data_atual   = datetime.datetime.now().strftime("%Y-%m-%d")
     pdf_filename = f"FULL_REPORT_{dataset_name}_{data_atual}.pdf"
     gerar_relatorio_pdf(pdf_results_train, analysis_results, pdf_filename)
     print(f"\nPipeline Completo Finalizado! Relatório: {pdf_filename}")
+
 
 if __name__ == "__main__":
     main()

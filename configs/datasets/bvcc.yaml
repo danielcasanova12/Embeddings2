@@ -1,14 +1,11 @@
-# configs/datasets/bvcc.yaml
-# Dataset configuration for BVCC
-
 datasets:
-  name: "bvcc"
+  name: "bvcc"  # <- será usado para montar o path: embeddings/bvcc/{split}/metadata_with_embs.csv
   train:
-    metadata_path: "/home/time_mos/casanova/Embeddings/datasets/Datasets_mos/bvcc/main/DATA/sets/train_with_embs.csv"
+    metadata_path: "embeddings/bvcc/train/metadata_with_embs.csv"
     target_column: "mos"
   val:
-    metadata_path: "/home/time_mos/casanova/Embeddings/datasets/Datasets_mos/bvcc/main/DATA/sets/val_with_embs.csv"
+    metadata_path: "embeddings/bvcc/val/metadata_with_embs.csv"
     target_column: "mos"
   test:
-    metadata_path: "/home/time_mos/casanova/Embeddings/datasets/Datasets_mos/bvcc/main/DATA/sets/test_with_embs.csv"
+    metadata_path: "embeddings/bvcc/test/metadata_with_embs.csv"
     target_column: "mos"
