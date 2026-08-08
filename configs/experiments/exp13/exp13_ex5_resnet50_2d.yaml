@@ -1,0 +1,17 @@
+# exp13: ResNet-50 sobre Mel-Espectrograma (128 mel-bands x time)
+# Grupo: Tempo-Frequencia (2D) - Artefatos locais, ruido, distorcao de banda
+defaults: [/model]
+experiment: "exp13_ex5_resnet50"
+model_type: "single"
+embeddings:
+  - name: "resnet50"
+    column: "resnet50_path"
+    dim: 2048
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

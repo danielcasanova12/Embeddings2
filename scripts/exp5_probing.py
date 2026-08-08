@@ -10,7 +10,7 @@ from scipy.stats import pearsonr
 from sklearn.metrics import accuracy_score, r2_score, f1_score, mean_squared_error
 from sklearn.preprocessing import LabelEncoder
 
-from src.dataset import build_loaders
+from src.dataset import build_loaders, normalize_embedding_configs
 
 class LinearProbe(nn.Module):
     """Strictly linear probe: Input -> Linear -> Output"""
@@ -66,7 +66,7 @@ def train_probe(model, loader, val_loader, task_type="regression", epochs=20, lr
                 if x.dim() == 3: x = x.mean(dim=1)
                 
                 if task_type == "regression":
-                    y = torch.tensor([e[target_col] for e in extras]).float() if target_col else mos
+                    y = mos if target_col == "mos" else torch.tensor([e[target_col] for e in extras]).float()
                     out = model(x).squeeze(-1).cpu()
                 elif task_type == "semantic_regression":
                     y = torch.tensor([e[target_col] for e in extras]).float()
@@ -98,9 +98,22 @@ def train_probe(model, loader, val_loader, task_type="regression", epochs=20, lr
     model.load_state_dict(best_state)
     return best_val_metric
 
-def run_probing_experiment(cfg_path: str, output_dir: str = "results/probing"):
+def run_probing_experiment(
+    cfg_path: str,
+    output_dir: str = "results/probing",
+    dataset_config: str = "configs/datasets/bvcc.yaml",
+    model_defaults: str = "configs/model.yaml",
+):
     os.makedirs(output_dir, exist_ok=True)
-    cfg = OmegaConf.to_container(OmegaConf.load(cfg_path), resolve=True)
+    cfg = OmegaConf.to_container(
+        OmegaConf.merge(
+            OmegaConf.load(model_defaults),
+            OmegaConf.load(dataset_config),
+            OmegaConf.load(cfg_path),
+        ),
+        resolve=True,
+    )
+    cfg["embeddings"] = normalize_embedding_configs(cfg.get("embeddings", []))
     
     prob_cfg = cfg.get("probing", {})
     # Tasks: speaker (class), noise (reg), mos (reg), semantic (reg/class)
@@ -119,7 +132,8 @@ def run_probing_experiment(cfg_path: str, output_dir: str = "results/probing"):
 
         print(f"\n>>> Rodando Probe: {task_name} ({task_type})")
         
-        current_cfg = cfg.copy()
+        current_cfg = dict(cfg)
+        current_cfg["probing"] = dict(current_cfg.get("probing", {}))
         current_cfg["probing"]["extra_columns"] = [target_col] if target_col != "mos" else []
         
         train_loader, val_loader, test_loader = build_loaders(current_cfg)
@@ -196,5 +210,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", required=True)
     parser.add_argument("-o", "--output", default="results/probing")
+    parser.add_argument("-d", "--dataset-config", default="configs/datasets/bvcc.yaml")
+    parser.add_argument("-m", "--model-defaults", default="configs/model.yaml")
     args = parser.parse_args()
-    run_probing_experiment(args.config, args.output)
+    run_probing_experiment(args.config, args.output, args.dataset_config, args.model_defaults)

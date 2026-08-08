@@ -1,0 +1,17 @@
+# exp13: eGeMAPS - Baseline classica interpretavel (openSMILE)
+# Grupo: Acustico Classico (LLD) - Jitter, Shimmer, HNR, F1-F3 formantes
+defaults: [/model]
+experiment: "exp13_ex3_egemaps"
+model_type: "single"
+embeddings:
+  - name: "egemaps"
+    column: "egemaps_path"
+    dim: 88
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

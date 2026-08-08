@@ -1,0 +1,17 @@
+# exp13: AST/PaSST - Audio Spectrogram Transformer (ViT sobre mel-patches)
+# Grupo: Tempo-Frequencia (2D) - SOTA em eventos de audio, artefatos globais
+defaults: [/model]
+experiment: "exp13_ex6_ast"
+model_type: "single"
+embeddings:
+  - name: "ast"
+    column: "ast_path"
+    dim: 768
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

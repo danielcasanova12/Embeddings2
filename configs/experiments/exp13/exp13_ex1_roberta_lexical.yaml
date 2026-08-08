@@ -1,0 +1,17 @@
+# exp13: RoBERTa/DeBERTa - Texto da transcricao ASR
+# Grupo: Conteudo/Lexical - Isola o vies linguistico puro
+defaults: [/model]
+experiment: "exp13_ex1_roberta"
+model_type: "single"
+embeddings:
+  - name: "roberta"
+    column: "roberta_path"
+    dim: 768
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

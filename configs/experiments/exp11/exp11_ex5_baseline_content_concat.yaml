@@ -1,0 +1,18 @@
+# exp11: Baseline SEM CKA - 5 conteudo com concat_fusion (comparacao direta)
+defaults: [/model]
+experiment: "exp11_ex5_baseline_content_concat"
+model_type: "concat_fusion"
+embeddings:
+  - {name: "whisper",    column: "whisper_path",    dim: 1280}
+  - {name: "contentvec", column: "contentvec_path", dim: 768}
+  - {name: "hubert",     column: "hubert_path",     dim: 768}
+  - {name: "wavlm",      column: "wavlm_path",      dim: 768}
+  - {name: "wav2vec2",   column: "wav2vec2_path",   dim: 768}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

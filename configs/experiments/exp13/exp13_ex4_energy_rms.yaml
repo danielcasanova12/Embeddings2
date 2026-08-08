@@ -1,0 +1,17 @@
+# exp13: Energy/RMS - Volume/intensidade do sinal
+# Grupo: Prosodia - Essencial para emocao (raiva vs tristeza)
+defaults: [/model]
+experiment: "exp13_ex4_energy"
+model_type: "single"
+embeddings:
+  - name: "energy"
+    column: "energy_path"
+    dim: 1
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

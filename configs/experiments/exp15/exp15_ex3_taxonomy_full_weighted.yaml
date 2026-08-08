@@ -1,0 +1,19 @@
+# exp15: Fusao taxonomica completa - weighted fusion (analise de pesos por grupo)
+defaults: [/model]
+experiment: "exp15_ex3_taxonomy_full_weighted"
+model_type: "weighted_fusion"
+embeddings:
+  - {name: "wavlm",      column: "wavlm_path",      dim: 768}
+  - {name: "resnet50",   column: "resnet50_path",   dim: 2048}
+  - {name: "egemaps",    column: "egemaps_path",    dim: 88}
+  - {name: "speaker",    column: "speaker_path",    dim: 192}
+  - {name: "f0",         column: "f0_path",         dim: 1}
+  - {name: "energy",     column: "energy_path",     dim: 1}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

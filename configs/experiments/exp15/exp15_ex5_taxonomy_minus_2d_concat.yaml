@@ -1,0 +1,19 @@
+# exp15: Ablacao - sem ResNet-50 (Grupo 2 2D removido)
+# Para medir contribuicao das features tempo-frequencia
+defaults: [/model]
+experiment: "exp15_ex5_taxonomy_minus_2d"
+model_type: "concat_fusion"
+embeddings:
+  - {name: "wavlm",      column: "wavlm_path",      dim: 768}
+  - {name: "egemaps",    column: "egemaps_path",    dim: 88}
+  - {name: "speaker",    column: "speaker_path",    dim: 192}
+  - {name: "f0",         column: "f0_path",         dim: 1}
+  - {name: "energy",     column: "energy_path",     dim: 1}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

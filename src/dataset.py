@@ -17,20 +17,101 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 from typing import List
+from pathlib import Path
+
+
+EMBEDDING_COLUMN_MAP = {
+    "whisper": "whisper_path",
+    "contentvec": "contentvec_path",
+    "speaker": "speaker_path",
+    "f0": "f0_path",
+    "hubert": "hubert_path",
+    "wavlm": "wavlm_path",
+    "wav2vec2": "wav2vec2_path",
+}
+
+EMBEDDING_DIM_MAP = {
+    "whisper": 1280,
+    "contentvec": 768,
+    "speaker": 192,
+    "f0": 1,
+    "hubert": 768,
+    "wavlm": 768,
+    "wav2vec2": 768,
+}
+
+
+def _resolve_case_insensitive_path(path_str: str) -> str:
+    path = Path(path_str)
+    if path.exists():
+        return str(path)
+
+    base = Path(path.anchor) if path.is_absolute() else Path(".")
+    parts = [p for p in path.parts if p not in ("", path.anchor)]
+    current = base
+
+    for part in parts:
+        if not current.exists():
+            return path_str
+
+        exact = current / part
+        if exact.exists():
+            current = exact
+            continue
+
+        lowered = part.lower()
+        matches = [child for child in current.iterdir() if child.name.lower() == lowered]
+        if len(matches) != 1:
+            return path_str
+        current = matches[0]
+
+    return str(current)
+
+
+def _embedding_column(emb_cfg: dict) -> str:
+    column = emb_cfg.get("column")
+    if column:
+        return column
+
+    name = emb_cfg.get("name", "").lower()
+    if name in EMBEDDING_COLUMN_MAP:
+        return EMBEDDING_COLUMN_MAP[name]
+
+    raise KeyError(
+        f"Embedding '{emb_cfg.get('name', '?')}' sem campo 'column' e sem mapeamento conhecido."
+    )
+
+
+def normalize_embedding_configs(emb_cfgs: List[dict]) -> List[dict]:
+    normalized = []
+    for emb_cfg in emb_cfgs:
+        item = dict(emb_cfg)
+        name = item.get("name", "").lower()
+
+        if not item.get("column") and name in EMBEDDING_COLUMN_MAP:
+            item["column"] = EMBEDDING_COLUMN_MAP[name]
+
+        if name in EMBEDDING_DIM_MAP:
+            item["dim"] = EMBEDDING_DIM_MAP[name]
+
+        normalized.append(item)
+
+    return normalized
 
 
 class MultiEmbeddingMOSDataset(Dataset):
     def __init__(
         self,
         metadata_path: str,
-        embedding_columns: List[str],
+        embedding_specs: List[dict],
         target_column: str = "mos",
         extra_columns: List[str] = None, # Colunas para Probing (Speaker, SNR, etc.)
         layer: int = -1,
         pool_time: bool = True,
     ):
         self.df = pd.read_csv(metadata_path)
-        self.emb_cols    = embedding_columns
+        self.emb_specs   = embedding_specs
+        self.emb_cols    = [spec["column"] for spec in embedding_specs]
         self.target_col  = target_column
         self.extra_cols  = extra_columns or []
         self.layer       = layer
@@ -39,11 +120,23 @@ class MultiEmbeddingMOSDataset(Dataset):
     def __len__(self):
         return len(self.df)
 
-    def _load_emb(self, path: str) -> torch.Tensor:
+    def _load_emb(self, path: str, emb_spec: dict) -> torch.Tensor:
         emb = torch.load(path, map_location="cpu", weights_only=True).float()
+        expected_dim = emb_spec.get("dim")
         if emb.dim() == 3:
             emb = emb[self.layer]
-        
+
+        if emb.dim() == 1:
+            if expected_dim is not None and emb.shape[0] == expected_dim:
+                return emb
+
+            # Sequência escalar 1D, como F0 frame a frame.
+            if self.pool_time:
+                emb = emb.mean(dim=0, keepdim=True)
+            else:
+                emb = emb.unsqueeze(-1)
+            return emb
+
         if self.pool_time and emb.dim() == 2:
             emb = emb.mean(dim=0)
         return emb
@@ -51,7 +144,10 @@ class MultiEmbeddingMOSDataset(Dataset):
     def __getitem__(self, idx):
         row  = self.df.iloc[idx]
         
-        embs = [self._load_emb(row[col]) for col in self.emb_cols]
+        embs = [
+            self._load_emb(row[col], spec)
+            for col, spec in zip(self.emb_cols, self.emb_specs)
+        ]
         mos  = torch.tensor(float(row[self.target_col]), dtype=torch.float32)
         
         # Extra targets para Probing
@@ -96,7 +192,7 @@ def collate_fn(batch):
 def build_loaders(cfg: dict):
     ds_cfg = cfg["datasets"]
     tr_cfg = cfg["train"]
-    emb_cols = [e["column"] for e in cfg["embeddings"]]
+    embedding_specs = normalize_embedding_configs(cfg["embeddings"])
     
     # Detecção automática se precisamos de pool no dataset ou no modelo
     # Se qualquer embedding pedir ASP ou Stats, desativamos pool_time no Dataset
@@ -108,8 +204,8 @@ def build_loaders(cfg: dict):
 
     def _ds(split_cfg):
         return MultiEmbeddingMOSDataset(
-            metadata_path     = split_cfg["metadata_path"],
-            embedding_columns = emb_cols,
+            metadata_path     = _resolve_case_insensitive_path(split_cfg["metadata_path"]),
+            embedding_specs   = embedding_specs,
             target_column     = split_cfg.get("target_column", "mos"),
             extra_columns     = extra_cols,
             pool_time         = pool_time_dataset

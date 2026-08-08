@@ -16,7 +16,8 @@ class MLP(nn.Module):
     input_norm → Linear → Act → Dropout (×n) → Linear
     """
     def __init__(self, input_dim, hidden_dim, num_layers, output_dim,
-                 dropout=0.1, activation="relu", input_norm=True):
+                 dropout=0.1, activation="relu", input_norm=True,
+                 sigmoid_scale=False):
         super().__init__()
         act = ACTIVATIONS.get(activation, nn.ReLU)
         layers = []
@@ -28,9 +29,13 @@ class MLP(nn.Module):
             in_dim = hidden_dim
         layers.append(nn.Linear(in_dim, output_dim))
         self.net = nn.Sequential(*layers)
+        self.sigmoid_scale = sigmoid_scale
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x).squeeze(-1)
+        out = self.net(x)
+        if self.sigmoid_scale:
+            out = 1.0 + 4.0 * torch.sigmoid(out)
+        return out.squeeze(-1)
 
 
 # ---------------------------------------------------------------------------

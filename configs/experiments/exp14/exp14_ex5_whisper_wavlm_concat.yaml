@@ -1,0 +1,16 @@
+# exp14: Whisper + WavLM (ambos 1D SSL) - baseline comparacao
+# Comparar com exp14_ex1 (ResNet+WavLM) para ver se 2D agrega valor
+defaults: [/model]
+experiment: "exp14_ex5_whisper_wavlm_concat"
+model_type: "concat_fusion"
+embeddings:
+  - {name: "whisper",    column: "whisper_path",    dim: 1280}
+  - {name: "wavlm",      column: "wavlm_path",      dim: 768}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

@@ -24,16 +24,57 @@ TEST_RESULTS_CSV  = "test_results.csv"
 # -----------------------------------------------------------------------
 EMBEDDINGS_ROOT = Path("embeddings")  # mantém para compatibilidade
 
+def _resolve_case_insensitive_path(path_str: str) -> Path:
+    """
+    Resolve um path existente mesmo quando há diferença de caixa
+    entre config e filesystem (ex.: bvcc vs BVCC em Linux).
+    """
+    original = Path(path_str)
+    if original.exists():
+        return original
+
+    base = Path(original.anchor) if original.is_absolute() else Path(".")
+    parts = [p for p in original.parts if p not in ("", original.anchor)]
+    current = base
+
+    for part in parts:
+        if not current.exists():
+            return original
+
+        exact = current / part
+        if exact.exists():
+            current = exact
+            continue
+
+        lowered = part.lower()
+        matches = [child for child in current.iterdir() if child.name.lower() == lowered]
+        if len(matches) != 1:
+            return original
+        current = matches[0]
+
+    return current
+
+
+def _resolve_dataset_root(dataset_name: str) -> Path:
+    return _resolve_case_insensitive_path(str(EMBEDDINGS_ROOT / dataset_name))
+
 def resolve_data_paths(cfg_dict: dict) -> dict:
     """
     Usa os metadata_path já definidos no config (absolutos ou relativos).
-    Apenas valida existência e avisa — não reescreve mais o path.
+    Se houver diferença de caixa entre config e filesystem, reescreve
+    para o path real antes de validar.
     """
     datasets = cfg_dict.get("datasets", {})
     for split in ["train", "val", "test"]:
         split_cfg = datasets.get(split, {})
         path = split_cfg.get("metadata_path", "")
-        if path and not Path(path).exists():
+        if not path:
+            continue
+
+        resolved = _resolve_case_insensitive_path(path)
+        split_cfg["metadata_path"] = str(resolved)
+
+        if not resolved.exists():
             raise FileNotFoundError(
                 f"metadata_path não encontrado para split '{split}': {path}"
             )
@@ -137,10 +178,10 @@ def main():
     dataset_name   = dataset_cfg.datasets.name
 
     # Valida que os CSVs existem antes de começar
-    dataset_root = EMBEDDINGS_ROOT / dataset_name
+    dataset_root = _resolve_dataset_root(dataset_name)
     missing = []
     for split in ["train", "val", "test"]:
-        p = dataset_root / split / "metadata_with_embs.csv"
+        p = _resolve_case_insensitive_path(str(dataset_root / split / "metadata_with_embs.csv"))
         if not p.exists():
             missing.append(str(p))
     if missing:
@@ -208,6 +249,8 @@ def main():
     run_command([
         "python", "scripts/exp5_probing.py",
         "-c", "configs/experiments/exp1/whisper.yaml",
+        "-d", args.dataset_config,
+        "-m", args.model_defaults,
     ], "Exp 5")
     analysis_results.append({
         "titulo":    "Experimento 5: Probing Linear Analysis",
@@ -231,7 +274,7 @@ def main():
 
     # --- FASE 5: Exp 7 (Perturbation) ---
     print("\n--- [Exp 7] Semantic Perturbation ---")
-    dataset_with_trans = str(dataset_root / "test" / "metadata_with_embs.csv")
+    dataset_with_trans = str(_resolve_case_insensitive_path(str(dataset_root / "test" / "metadata_with_embs.csv")))
     if os.path.exists(dataset_with_trans):
         run_command([
             "python", "scripts/prepare_perturbation_pairs.py",

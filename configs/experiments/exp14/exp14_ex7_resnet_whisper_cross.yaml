@@ -1,0 +1,15 @@
+# exp14: ResNet-50 (2D) + Whisper (1D) - cross interaction
+defaults: [/model]
+experiment: "exp14_ex7_resnet_whisper_cross"
+model_type: "cross_interaction"
+embeddings:
+  - {name: "resnet50",   column: "resnet50_path",   dim: 2048}
+  - {name: "whisper",    column: "whisper_path",    dim: 1280}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

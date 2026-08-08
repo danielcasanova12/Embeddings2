@@ -5,17 +5,51 @@ Chamado por run_all.py — não é um script standalone.
 """
 
 import os
+import torch
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
 
-from src.dataset import build_loaders
+from src.dataset import build_loaders, normalize_embedding_configs
 from src.models import MOSPredictor
+
+
+def _resolve_accelerator_devices(trainer_cfg: dict) -> tuple[str, int]:
+    accelerator = trainer_cfg.get("accelerator", "auto")
+    devices = trainer_cfg.get("devices")
+
+    if torch.cuda.is_available():
+        accelerator = "gpu" if accelerator == "auto" else accelerator
+        devices = 1 if devices in (None, "auto") else devices
+    else:
+        accelerator = "cpu" if accelerator == "auto" else accelerator
+        devices = 1 if devices in (None, "auto") else devices
+
+    return accelerator, devices
+
+
+def _build_wandb_logger(cfg: dict, exp_name: str):
+    wb_cfg = cfg.get("wandb", {})
+    if not wb_cfg.get("enabled", False):
+        return None
+
+    has_key = bool(os.environ.get("WANDB_API_KEY"))
+    if not has_key:
+        print("W&B desabilitado: WANDB_API_KEY não configurada no ambiente.")
+        return None
+
+    return WandbLogger(
+        project=wb_cfg.get("project", "mos-mlp"),
+        entity=wb_cfg.get("entity", None),
+        name=exp_name,
+        config=cfg,
+    )
 
 
 def run_experiment(cfg: dict) -> tuple[list[dict], dict]:
     pl.seed_everything(cfg.get("seed", 42), workers=True)
-    exp_name = cfg.get("experiment_name", "exp")
+    exp_name = cfg.get("experiment_name") or cfg.get("experiment") or "exp"
+    cfg["embeddings"] = normalize_embedding_configs(cfg.get("embeddings", []))
 
     train_loader, val_loader, test_loader = build_loaders(cfg)
 
@@ -36,19 +70,13 @@ def run_experiment(cfg: dict) -> tuple[list[dict], dict]:
         verbose=False,
     )
 
-    wb_cfg = cfg.get("wandb", {})
-    logger = None
-    if wb_cfg.get("enabled", False):
-        logger = WandbLogger(
-            project=wb_cfg.get("project", "mos-mlp"),
-            entity=wb_cfg.get("entity", None),
-            name=exp_name, config=cfg,
-        )
-
     tr = cfg["trainer"]
+    accelerator, devices = _resolve_accelerator_devices(tr)
+    logger = _build_wandb_logger(cfg, exp_name)
     trainer = pl.Trainer(
         max_epochs=tr["max_epochs"],
-        accelerator=tr["accelerator"],
+        accelerator=accelerator,
+        devices=devices,
         gradient_clip_val=tr["gradient_clip_val"],
         log_every_n_steps=tr["log_every_n_steps"],
         accumulate_grad_batches=tr["accumulate_grad_batches"],

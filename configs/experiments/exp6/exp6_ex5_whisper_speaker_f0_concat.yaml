@@ -1,0 +1,12 @@
+defaults: [/model]
+experiment_name: "exp6_ex5_whisper_speaker_f0_concat"
+model_type: "concat_fusion"
+embeddings:
+  - {name: "whisper",    column: "whisper_path",    dim: 1280}
+  - {name: "speaker",    column: "speaker_path",    dim: 192}
+  - {name: "f0",         column: "f0_path",         dim: 1}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 3

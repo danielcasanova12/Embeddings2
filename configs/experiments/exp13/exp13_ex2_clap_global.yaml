@@ -1,0 +1,17 @@
+# exp13: CLAP - Contexto global e expressividade da cena acustica
+# Grupo: Semantico-Global - Captura relacao audio-linguagem em larga escala
+defaults: [/model]
+experiment: "exp13_ex2_clap"
+model_type: "single"
+embeddings:
+  - name: "clap"
+    column: "clap_path"
+    dim: 512
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

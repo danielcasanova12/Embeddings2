@@ -1,0 +1,20 @@
+# exp15: Fusao taxonomica completa - 1 representante de cada grupo
+# Grupo 1 (SSL): wavlm | Grupo 2 (2D): resnet50 | Grupo 3 (LLD): egemaps | Grupo 4 (Prosodia): speaker+f0+energy
+defaults: [/model]
+experiment: "exp15_ex1_taxonomy_full_concat"
+model_type: "concat_fusion"
+embeddings:
+  - {name: "wavlm",      column: "wavlm_path",      dim: 768}
+  - {name: "resnet50",   column: "resnet50_path",   dim: 2048}
+  - {name: "egemaps",    column: "egemaps_path",    dim: 88}
+  - {name: "speaker",    column: "speaker_path",    dim: 192}
+  - {name: "f0",         column: "f0_path",         dim: 1}
+  - {name: "energy",     column: "energy_path",     dim: 1}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

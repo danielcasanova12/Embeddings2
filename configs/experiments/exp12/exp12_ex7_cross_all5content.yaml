@@ -1,0 +1,19 @@
+# exp12: Cross-Attention entre os 5 modelos de conteudo
+# Para comparar: cross entre conteudo vs cross whisper+speaker
+defaults: [/model]
+experiment: "exp12_ex7_cross_all5content"
+model_type: "cross_interaction"
+embeddings:
+  - {name: "whisper",    column: "whisper_path",    dim: 1280}
+  - {name: "contentvec", column: "contentvec_path", dim: 768}
+  - {name: "hubert",     column: "hubert_path",     dim: 768}
+  - {name: "wavlm",      column: "wavlm_path",      dim: 768}
+  - {name: "wav2vec2",   column: "wav2vec2_path",   dim: 768}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

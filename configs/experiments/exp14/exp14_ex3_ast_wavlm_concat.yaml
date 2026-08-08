@@ -1,0 +1,16 @@
+# exp14: AST (2D Transformer) + WavLM (1D) - concat
+# AST traz atencao global sobre espectrograma, WavLM traz representacao SSL
+defaults: [/model]
+experiment: "exp14_ex3_ast_wavlm_concat"
+model_type: "concat_fusion"
+embeddings:
+  - {name: "ast",        column: "ast_path",        dim: 768}
+  - {name: "wavlm",      column: "wavlm_path",      dim: 768}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

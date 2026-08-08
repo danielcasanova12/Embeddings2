@@ -1,0 +1,17 @@
+# exp15: Ablacao - sem Grupo 4 (speaker, f0, energy)
+# Para medir contribuicao das features de estilo/prosodia
+defaults: [/model]
+experiment: "exp15_ex6_taxonomy_minus_prosody"
+model_type: "concat_fusion"
+embeddings:
+  - {name: "wavlm",      column: "wavlm_path",      dim: 768}
+  - {name: "resnet50",   column: "resnet50_path",   dim: 2048}
+  - {name: "egemaps",    column: "egemaps_path",    dim: 88}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

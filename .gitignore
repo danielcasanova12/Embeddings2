@@ -24,3 +24,5 @@
 *.ckpt
 *.md
 lightning_logs/
+wandb/
+

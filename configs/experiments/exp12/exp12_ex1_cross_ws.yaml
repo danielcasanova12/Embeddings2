@@ -1,0 +1,17 @@
+# exp12: Cross-Attention Whisper x Acoustic - a hipotese central
+# Atencao cruzada entre semantico (whisper) e acustico (speaker) captura
+# interacao complementar que fusao simples (concat) nao captura.
+defaults: [/model]
+experiment: "exp12_ex1_cross_ws"
+model_type: "cross_interaction"
+embeddings:
+  - {name: "whisper",    column: "whisper_path",    dim: 1280}
+  - {name: "speaker",    column: "speaker_path",    dim: 192}
+adapter:
+  adapter_dim: 256
+mlp:
+  hidden_dim: 512
+  num_layers: 2
+  dropout: 0.1
+  activation: "relu"
+sigmoid_scale: true

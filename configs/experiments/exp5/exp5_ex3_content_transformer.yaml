@@ -1,0 +1,21 @@
+defaults: [/model]
+experiment_name: "exp5_ex3_content_transformer"
+model_type: "transformer_fusion"
+embeddings:
+  - {name: "whisper",    column: "whisper_path",    dim: 1280}
+  - {name: "contentvec", column: "contentvec_path", dim: 768}
+  - {name: "hubert",     column: "hubert_path",     dim: 768}
+  - {name: "wavlm",      column: "wavlm_path",      dim: 768}
+  - {name: "wav2vec2",   column: "wav2vec2_path",   dim: 768}
+adapter:
+  adapter_dim: 256
+transformer:
+  num_heads: 4
+  num_layers: 2
+  feedforward_dim: 512
+  dropout: 0.1
+mlp:
+  hidden_dim: 256
+  num_layers: 2
+optimizer:
+  learning_rate: 5.0e-4
